@@ -1,0 +1,11 @@
+services:
+  joytree-mcp:
+    build: .
+    container_name: joytree-mcp
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      # Only override this if you're pointing at something other than the
+      # live JoyTree API (e.g. a staging environment).
+      - JOYTREE_BASE_URL=${JOYTREE_BASE_URL:-https://joytree.site}
