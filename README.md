@@ -34,24 +34,36 @@ update the tool here.
 
 ## Auth
 
-Each request must carry the caller's own JoyTree API key as a bearer token:
+Two ways to authenticate, both supported at once:
+
+**OAuth (what Claude's "Add custom connector" UI actually uses)** — this
+server is a full OAuth 2.1 authorization server (`/authorize`, `/token`,
+`/register`, `/revoke`, plus the standard metadata discovery endpoints).
+"Logging in" means a one-time form asking for your JoyTree API key (since
+JoyTree itself has no separate OAuth login, only jtk_ keys) — the key is
+verified against the real API once, then wrapped in a normal OAuth
+access/refresh token pair. From that point on, Claude only ever sees an
+opaque OAuth token; your raw API key is never exposed to it again.
+
+**Direct API key** — for anyone scripting against this server without
+going through OAuth (curl, a different MCP client), send your key straight
+as a bearer token:
 
 ```
 Authorization: Bearer jtk_xxxxxxxxxxxxxxxxxxxx
 ```
 
-There is no shared/server-wide credential anywhere in this service — every
-tool call is scoped to whichever key the client sent with *that* request.
-A fresh `McpServer` instance is built per request (stateless mode), so
-there's no session state where one caller's context could leak into
-another's.
+Either way, every tool call is scoped to whichever key that specific
+request resolved to. There is no shared/server-wide credential anywhere in
+this service, and a fresh `McpServer` instance is built per request
+(stateless mode), so there's no session state where one caller's context
+could leak into another's.
 
-This is intentionally the simplest auth model that's still secure (a
-personal API key, same as the CLI already uses) rather than a full OAuth
-authorization flow. Upgrading to OAuth later — so a new developer can
-connect with a login button instead of copy-pasting an API key — is a
-natural next step and shouldn't require changing any tool logic, just the
-auth layer in `src/server.js`.
+OAuth state (registered clients, pending authorizations, access/refresh
+tokens) is currently in-memory — a server restart logs everyone out, and
+they just reconnect and paste their key again. Swapping that for
+Redis/a database later is a contained change to `src/oauth-provider.js`
+and wouldn't require touching the tool logic or the auth model at all.
 
 ## Running locally
 
@@ -74,6 +86,11 @@ real MCP client that checks: an invalid/missing key is cleanly rejected,
 a valid handshake correctly lists all 18 tools, and an actual tool call
 makes it through the full pipeline (parse → auth → dispatch → real HTTP
 call → clean error/result), not just that the server boots.
+
+`test/oauth-flow-check.js` separately exercises the OAuth side: dynamic
+client registration, the `/authorize` page rendering, and
+`/authorize/submit` handling. `node test/oauth-flow-check.js` (with the
+server already running) walks through it.
 
 ## Deploying
 

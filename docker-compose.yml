@@ -9,6 +9,11 @@ services:
       # Only override this if you're pointing at something other than the
       # live JoyTree API (e.g. a staging environment).
       - JOYTREE_BASE_URL=${JOYTREE_BASE_URL:-https://joytree.site}
+      # This MUST be the real public URL once deployed (e.g.
+      # https://mcp.joytree.site) -- it's used as the OAuth issuer
+      # identifier, and OAuth clients (including Claude) will reject a
+      # mismatch between this and the URL they actually connected to.
+      - MCP_PUBLIC_URL=${MCP_PUBLIC_URL:-http://localhost:8787}
     networks:
       # Cloudflare Tunnel (cloudflared) reaches services by their Docker
       # container name over this network -- the same way it already reaches

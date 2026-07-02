@@ -3,17 +3,38 @@
 const express = require('express');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
+const { mcpAuthRouter } = require('@modelcontextprotocol/sdk/server/auth/router.js');
 const { JoyTreeClient } = require('./joytree-client');
 const { registerJoyTreeTools } = require('./tools');
+const { JoyTreeOAuthProvider } = require('./oauth-provider');
 
 const PORT = process.env.PORT || 8787;
+const PUBLIC_URL = process.env.MCP_PUBLIC_URL || `http://localhost:${PORT}`;
 
-function extractApiKey(req) {
+const oauthProvider = new JoyTreeOAuthProvider();
+
+/**
+ * Resolve which JoyTree API key a request is authenticated as, supporting
+ * two paths at once:
+ *  - An OAuth access token issued by our own /authorize + /token flow
+ *    (what Claude's "Add custom connector" UI actually uses)
+ *  - A raw jtk_ API key sent directly as a bearer token (for anyone
+ *    scripting against this server directly without going through OAuth
+ *    at all -- curl, a different MCP client, etc.)
+ */
+async function resolveApiKey(req) {
   const auth = String(req.headers['authorization'] || '');
-  if (auth.startsWith('Bearer ')) return auth.slice(7).trim();
-  // Fallback for MCP clients that only support query-string auth during setup
-  if (req.query && typeof req.query.api_key === 'string') return req.query.api_key;
-  return null;
+  if (!auth.startsWith('Bearer ')) return null;
+  const token = auth.slice(7).trim();
+
+  if (token.startsWith('jtk_')) return token; // direct key, skip OAuth entirely
+
+  try {
+    const info = await oauthProvider.verifyAccessToken(token);
+    return info.extra.apiKey;
+  } catch {
+    return null;
+  }
 }
 
 function buildServer(apiKey) {
@@ -27,21 +48,39 @@ function buildServer(apiKey) {
 }
 
 const app = express();
+
+// The /authorize page (rendered by oauthProvider.authorize) posts here
+// with the pasted API key. Mounted BEFORE mcpAuthRouter below -- the SDK's
+// router reads the request stream for its own POST endpoints, and once a
+// request body stream has been consumed it can't be read again, so this
+// has to get first access to its own path.
+app.post('/authorize/submit', express.urlencoded({ extended: true }), (req, res) => {
+  oauthProvider.handleAuthorizeSubmit(req, res);
+});
+
+// OAuth endpoints (/.well-known/oauth-authorization-server, /authorize,
+// /token, /register, /revoke) -- everything needed for Claude's connector
+// UI to discover and complete the OAuth flow automatically.
+app.use(mcpAuthRouter({
+  provider: oauthProvider,
+  issuerUrl: new URL(PUBLIC_URL),
+  resourceName: 'JoyTree',
+  scopesSupported: ['joytree'],
+}));
+
 app.use(express.json({ limit: '2mb' }));
 
-// Health check — for the platform hosting this (e.g. JoyTree itself) to
-// verify the process is alive.
 app.get('/health', (_req, res) => res.status(200).json({ ok: true }));
 
 // Stateless MCP endpoint: every request gets its own McpServer + transport,
-// scoped to whichever API key was sent with THAT request. Nothing about one
+// scoped to whichever key that request resolved to. Nothing about one
 // caller's session is ever visible to another.
 app.post('/mcp', async (req, res) => {
-  const apiKey = extractApiKey(req);
-  if (!apiKey || !apiKey.startsWith('jtk_')) {
+  const apiKey = await resolveApiKey(req);
+  if (!apiKey) {
     res.status(401).json({
       jsonrpc: '2.0',
-      error: { code: -32001, message: 'Missing or invalid JoyTree API key. Connect with Authorization: Bearer jtk_... (find yours at joytree.site/dashboard/account).' },
+      error: { code: -32001, message: 'Missing or invalid credentials. Connect via OAuth, or send Authorization: Bearer jtk_... directly.' },
       id: null,
     });
     return;
@@ -65,12 +104,9 @@ app.post('/mcp', async (req, res) => {
   }
 });
 
-// GET/DELETE on /mcp are part of the streamable-HTTP spec for server-initiated
-// notifications and session teardown — not used in stateless mode, but the
-// spec expects a response rather than a hard 404.
 app.get('/mcp', (_req, res) => res.status(405).json({ error: 'Method not allowed in stateless mode' }));
 app.delete('/mcp', (_req, res) => res.status(405).json({ error: 'Method not allowed in stateless mode' }));
 
 app.listen(PORT, () => {
-  console.log(`[joytree-mcp] listening on :${PORT}`);
+  console.log(`[joytree-mcp] listening on :${PORT} (public URL: ${PUBLIC_URL})`);
 });
