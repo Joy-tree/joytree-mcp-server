@@ -28,9 +28,15 @@ processes.
 - **Databases** — `joytree_list_databases`, `joytree_create_database`, `joytree_get_database`, `joytree_database_lifecycle`
 - **Realtime API Builder** — `joytree_create_api_from_prompt`, `joytree_list_generated_apis`, `joytree_dockerize_api`
 
-Every tool is a thin, direct wrapper around JoyTree's existing REST API —
-no new backend logic, no duplicated business rules. If the API changes,
-update the tool here.
+Most read/lookup tools call JoyTree's versioned `/api/v1/*` surface rather
+than the older internal `/api/*` routes — the v1 API resolves projects by
+either id *or* subdomain and doesn't throw on non-ObjectId project ids
+(most projects here use custom string ids, not real Mongo ObjectIds),
+so it's the more robust surface for exactly this kind of external tool
+use. `joytree_delete_project` is the one deliberate exception — it stays
+on the original `/api/projects/:id` endpoint, since that one does full
+cleanup (site files, container, DNS route) where v1's delete only removes
+the workspace record.
 
 ## Auth
 
