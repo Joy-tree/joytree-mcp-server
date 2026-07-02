@@ -24,7 +24,10 @@ const oauthProvider = new JoyTreeOAuthProvider();
  */
 async function resolveApiKey(req) {
   const auth = String(req.headers['authorization'] || '');
-  if (!auth.startsWith('Bearer ')) return null;
+  if (!auth.startsWith('Bearer ')) {
+    console.error('[joytree-mcp] /mcp request with no/invalid Authorization header:', auth ? '(present but not Bearer)' : '(missing entirely)');
+    return null;
+  }
   const token = auth.slice(7).trim();
 
   if (token.startsWith('jtk_')) return token; // direct key, skip OAuth entirely
@@ -32,7 +35,8 @@ async function resolveApiKey(req) {
   try {
     const info = await oauthProvider.verifyAccessToken(token);
     return info.extra.apiKey;
-  } catch {
+  } catch (err) {
+    console.error('[joytree-mcp] OAuth token verification failed:', err.message, '-- token prefix:', token.slice(0, 8) + '...');
     return null;
   }
 }
@@ -48,6 +52,14 @@ function buildServer(apiKey) {
 }
 
 const app = express();
+
+// This runs behind exactly one reverse proxy (Cloudflare Tunnel), which
+// sets X-Forwarded-For. Without telling Express that, express-rate-limit
+// (used internally by the SDK's OAuth router) throws a ValidationError on
+// every OAuth-related request rather than silently trusting a header it
+// has no reason to trust -- correct default behavior on their part, but
+// it needs this one line to know the proxy in front of it is legitimate.
+app.set('trust proxy', 1);
 
 // The /authorize page (rendered by oauthProvider.authorize) posts here
 // with the pasted API key. Mounted BEFORE mcpAuthRouter below -- the SDK's
