@@ -9,3 +9,15 @@ services:
       # Only override this if you're pointing at something other than the
       # live JoyTree API (e.g. a staging environment).
       - JOYTREE_BASE_URL=${JOYTREE_BASE_URL:-https://joytree.site}
+    networks:
+      # Cloudflare Tunnel (cloudflared) reaches services by their Docker
+      # container name over this network -- the same way it already reaches
+      # the main app at http://deployboard:3001. Joining it here is what
+      # makes http://joytree-mcp:8787 resolvable as a Cloudflare Tunnel
+      # published route. Requires the deployboard stack to be up first,
+      # since that's what creates this network.
+      - deployboard-net
+
+networks:
+  deployboard-net:
+    external: true
