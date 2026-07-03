@@ -18,6 +18,13 @@ function errorResult(err) {
  * Registers every JoyTree tool on the given McpServer instance.
  * `getClient(extra)` must return a ready JoyTreeClient for the current
  * request (it reads the caller's API key out of the MCP request context).
+ *
+ * Every tool below carries explicit readOnlyHint/destructiveHint
+ * annotations (required for MCP directory submission) rather than leaving
+ * clients to guess: pure lookups are readOnlyHint:true; anything that
+ * creates or updates a resource without destroying existing data is
+ * readOnlyHint:false, destructiveHint:false; anything that can
+ * permanently remove a resource is destructiveHint:true.
  */
 function registerJoyTreeTools(server, getClient) {
   const tool = (name, config, handler) => {
@@ -36,6 +43,7 @@ function registerJoyTreeTools(server, getClient) {
     title: 'Who am I',
     description: 'Confirm the connected JoyTree account and API key scope. Use this first to verify the connection is working.',
     inputSchema: {},
+    annotations: { readOnlyHint: true },
   }, async (_args, client) => textResult(await client.get('/api/v1/account')));
 
   // ── Projects & deployments ─────────────────────────────────────────
@@ -43,12 +51,14 @@ function registerJoyTreeTools(server, getClient) {
     title: 'List projects',
     description: 'List all of the current user\'s JoyTree projects, with status, live URL, and last deploy time.',
     inputSchema: {},
+    annotations: { readOnlyHint: true },
   }, async (_args, client) => textResult(await client.get('/api/v1/projects')));
 
   tool('joytree_get_project', {
     title: 'Get project details',
     description: 'Get full details for one project by its ID or subdomain (from joytree_list_projects).',
     inputSchema: { projectId: z.string().describe('The project ID or subdomain') },
+    annotations: { readOnlyHint: true },
   }, async (args, client) => textResult(await client.get(`/api/v1/projects/${encodeURIComponent(args.projectId)}`)));
 
   tool('joytree_deploy_from_github', {
@@ -64,6 +74,7 @@ function registerJoyTreeTools(server, getClient) {
       outputDir: z.string().optional().describe('Override the auto-detected output directory'),
       siteType: z.enum(['static', 'server']).optional().describe('Force static vs. server app instead of auto-detecting'),
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => textResult(await client.post('/api/v1/deploy', {
     name: args.name,
     subdomain: args.subdomain || args.name,
@@ -79,6 +90,7 @@ function registerJoyTreeTools(server, getClient) {
     title: 'List deployment history',
     description: 'List recent deployments across all projects (or filter by project), with build status.',
     inputSchema: { projectId: z.string().optional().describe('Optionally scope to one project ID or subdomain') },
+    annotations: { readOnlyHint: true },
   }, async (args, client) => {
     const qs = args.projectId ? `?projectId=${encodeURIComponent(args.projectId)}` : '';
     return textResult(await client.get(`/api/v1/deployments${qs}`));
@@ -88,12 +100,14 @@ function registerJoyTreeTools(server, getClient) {
     title: 'Get runtime logs',
     description: 'Fetch recent deployment/runtime log history for a project — use this to debug a live site or check a deploy actually worked.',
     inputSchema: { projectId: z.string().describe('The project ID or subdomain') },
+    annotations: { readOnlyHint: true },
   }, async (args, client) => textResult(await client.get(`/api/v1/projects/${encodeURIComponent(args.projectId)}/logs`)));
 
   tool('joytree_delete_project', {
     title: 'Delete a project',
     description: 'Permanently delete a project — removes its site files, container, DNS route, and database record. Irreversible — confirm with the user before calling this.',
     inputSchema: { projectId: z.string().describe('The project ID to delete') },
+    annotations: { readOnlyHint: false, destructiveHint: true },
   }, async (args, client) => textResult(await client.del(`/api/projects/${encodeURIComponent(args.projectId)}`)));
 
   // ── Environment variables ──────────────────────────────────────────
@@ -101,6 +115,7 @@ function registerJoyTreeTools(server, getClient) {
     title: 'List environment variables',
     description: 'List the environment variables set on a project (values are masked by default for security).',
     inputSchema: { projectId: z.string() },
+    annotations: { readOnlyHint: true },
   }, async (args, client) => textResult(await client.get(`/api/v1/projects/${encodeURIComponent(args.projectId)}/env`)));
 
   tool('joytree_env_set', {
@@ -110,12 +125,14 @@ function registerJoyTreeTools(server, getClient) {
       projectId: z.string(),
       variables: z.record(z.string()).describe('Key/value pairs to set, e.g. { "DATABASE_URL": "postgres://..." }'),
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => textResult(await client.put(`/api/v1/projects/${encodeURIComponent(args.projectId)}/env`, args.variables)));
 
   tool('joytree_env_delete', {
     title: 'Delete an environment variable',
     description: 'Remove a single environment variable from a project.',
     inputSchema: { projectId: z.string(), key: z.string() },
+    annotations: { readOnlyHint: false, destructiveHint: true },
   }, async (args, client) => textResult(await client.del(`/api/projects/${encodeURIComponent(args.projectId)}/env/${encodeURIComponent(args.key)}`)));
 
   // ── Databases ───────────────────────────────────────────────────────
@@ -123,6 +140,7 @@ function registerJoyTreeTools(server, getClient) {
     title: 'List databases',
     description: 'List all managed databases in the account.',
     inputSchema: {},
+    annotations: { readOnlyHint: true },
   }, async (_args, client) => textResult(await client.get('/api/databases')));
 
   tool('joytree_create_database', {
@@ -133,6 +151,7 @@ function registerJoyTreeTools(server, getClient) {
       name: z.string().describe('Database name'),
       linkProjectId: z.string().optional().describe('If given, auto-injects DATABASE_URL into this project\'s env vars'),
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => textResult(await client.post('/api/databases', {
     type: args.type,
     name: args.name,
@@ -143,15 +162,17 @@ function registerJoyTreeTools(server, getClient) {
     title: 'Get database details',
     description: 'Get connection strings and status for a database by ID.',
     inputSchema: { databaseId: z.string() },
+    annotations: { readOnlyHint: true },
   }, async (args, client) => textResult(await client.get(`/api/databases/${encodeURIComponent(args.databaseId)}`)));
 
   tool('joytree_database_lifecycle', {
     title: 'Start/stop/restart/delete a database',
-    description: 'Change a database\'s running state.',
+    description: 'Change a database\'s running state. The "delete" action is permanent — confirm with the user before calling this with action:delete.',
     inputSchema: {
       databaseId: z.string(),
       action: z.enum(['start', 'stop', 'restart', 'delete']),
     },
+    annotations: { readOnlyHint: false, destructiveHint: true },
   }, async (args, client) => textResult(await client.post(`/api/databases/${encodeURIComponent(args.databaseId)}/${args.action}`)));
 
   // ── Realtime API Builder (prompt-to-API) ──────────────────────────
@@ -162,6 +183,7 @@ function registerJoyTreeTools(server, getClient) {
       prompt: z.string().describe('Plain-language description of the API, e.g. "A todo list API: create, list, complete, delete"'),
       aiVersion: z.enum(['v1', 'v2', 'v3', 'v4']).optional().describe('Generation engine (default v1 — free for everyone; v2 needs a paid plan; v3/v4 are currently admin-only)'),
     },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => textResult(await client.post('/api/developer/flows/from-text', {
     prompt: args.prompt,
     aiVersion: args.aiVersion || 'v1',
@@ -171,12 +193,14 @@ function registerJoyTreeTools(server, getClient) {
     title: 'List generated APIs',
     description: 'List every API previously generated with joytree_create_api_from_prompt.',
     inputSchema: {},
+    annotations: { readOnlyHint: true },
   }, async (_args, client) => textResult(await client.get('/api/developer/apis')));
 
   tool('joytree_dockerize_api', {
     title: 'Dockerize a generated API',
     description: 'Turn a generated API flow into a persistent, standalone container with its own subdomain (rather than the lightweight shared runtime it starts on).',
     inputSchema: { flowId: z.string() },
+    annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => textResult(await client.post(`/api/developer/flows/${encodeURIComponent(args.flowId)}/dockerize`)));
 
   // ── GitHub helper ───────────────────────────────────────────────────
@@ -184,6 +208,7 @@ function registerJoyTreeTools(server, getClient) {
     title: 'List connected GitHub repos',
     description: 'List repositories available through the user\'s connected GitHub account — useful to look up the right repoUrl before calling joytree_deploy_from_github.',
     inputSchema: {},
+    annotations: { readOnlyHint: true },
   }, async (_args, client) => textResult(await client.get('/api/github/repos')));
 }
 
