@@ -147,13 +147,13 @@ function registerJoyTreeTools(server, getClient) {
     title: 'Create a database',
     description: 'Provision a new managed database (PostgreSQL, MySQL, MariaDB, MongoDB, or Redis).',
     inputSchema: {
-      type: z.enum(['postgres', 'mysql', 'mariadb', 'mongodb', 'redis']).describe('Database engine'),
+      engine: z.enum(['postgres', 'mysql', 'mariadb', 'mongodb', 'redis']).describe('Database engine'),
       name: z.string().describe('Database name'),
       linkProjectId: z.string().optional().describe('If given, auto-injects DATABASE_URL into this project\'s env vars'),
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => textResult(await client.post('/api/databases', {
-    engine: args.type,
+    engine: args.engine,
     name: args.name,
     linkProjectId: args.linkProjectId,
   })));
