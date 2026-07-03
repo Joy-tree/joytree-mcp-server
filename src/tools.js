@@ -123,7 +123,7 @@ function registerJoyTreeTools(server, getClient) {
     title: 'List databases',
     description: 'List all managed databases in the account.',
     inputSchema: {},
-  }, async (_args, client) => textResult(await client.get('/api/v1/databases')));
+  }, async (_args, client) => textResult(await client.get('/api/databases')));
 
   tool('joytree_create_database', {
     title: 'Create a database',
