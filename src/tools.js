@@ -153,7 +153,7 @@ function registerJoyTreeTools(server, getClient) {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => textResult(await client.post('/api/databases', {
-    type: args.type,
+    engine: args.type,
     name: args.name,
     linkProjectId: args.linkProjectId,
   })));
