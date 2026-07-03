@@ -5,6 +5,7 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { mcpAuthRouter } = require('@modelcontextprotocol/sdk/server/auth/router.js');
 const { JoyTreeClient } = require('./joytree-client');
+const { PRIVACY_POLICY_HTML } = require('./privacy-policy');
 const { registerJoyTreeTools } = require('./tools');
 const { JoyTreeOAuthProvider } = require('./oauth-provider');
 
@@ -83,6 +84,10 @@ app.use(mcpAuthRouter({
 app.use(express.json({ limit: '2mb' }));
 
 app.get('/health', (_req, res) => res.status(200).json({ ok: true }));
+
+app.get('/privacy', (_req, res) => {
+  res.status(200).set('Content-Type', 'text/html').send(PRIVACY_POLICY_HTML);
+});
 
 // Stateless MCP endpoint: every request gets its own McpServer + transport,
 // scoped to whichever key that request resolved to. Nothing about one
