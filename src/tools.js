@@ -175,6 +175,84 @@ function registerJoyTreeTools(server, getClient) {
     annotations: { readOnlyHint: false, destructiveHint: true },
   }, async (args, client) => textResult(await client.post(`/api/databases/${encodeURIComponent(args.databaseId)}/${args.action}`)));
 
+  // ── Data Migration ──────────────────────────────────────────────────
+  // Moves data between databases regardless of engine, including from
+  // external sources not hosted on JoyTree at all. The destination is
+  // always one of the account's own provisioned databases; the source can
+  // be another JoyTree database, or an external MongoDB/Firebase RTDB/
+  // MySQL/PostgreSQL/MariaDB/Redis instance reached by connection string.
+  tool('joytree_start_migration', {
+    title: 'Start a data migration',
+    description: 'Move all data from a source database into one of your JoyTree databases, regardless of engine (e.g. Mongo to MySQL, Firebase to Postgres, Redis to MariaDB — translation between data models is handled automatically). Runs in the background — use joytree_get_migration to poll progress with the returned migrationId.',
+    inputSchema: {
+      sourceKind: z.enum(['joytree', 'mongo', 'firebase', 'sql', 'redis']).describe(
+        '"joytree" = another one of your own JoyTree databases (needs sourceDatabaseId). ' +
+        '"mongo" = an external MongoDB/Atlas cluster (needs connectionString, which MUST include a database name — Atlas\'s default "Copy connection string" button omits it, which would otherwise silently read from Mongo\'s own default "test" database instead). ' +
+        '"firebase" = a Firebase Realtime Database (needs firebaseDatabaseUrl). ' +
+        '"sql" = an external MySQL, PostgreSQL, or MariaDB server (needs connectionString and sqlEngine). ' +
+        '"redis" = an external Redis instance (needs connectionString).'
+      ),
+      sourceDatabaseId: z.string().optional().describe('Required when sourceKind is "joytree" — the ID of one of your own JoyTree databases to migrate FROM (from joytree_list_databases)'),
+      connectionString: z.string().optional().describe('Required when sourceKind is "mongo", "sql", or "redis" — the external database\'s connection string. Used once for this migration only, never stored.'),
+      sqlEngine: z.enum(['mysql', 'postgres', 'mariadb']).optional().describe('Required when sourceKind is "sql" — which engine connectionString connects to'),
+      firebaseDatabaseUrl: z.string().optional().describe('Required when sourceKind is "firebase", e.g. https://your-project-default-rtdb.firebaseio.com'),
+      firebaseAuthSecret: z.string().optional().describe('Optional Firebase legacy database secret — only needed if the RTDB\'s security rules require auth'),
+      destinationDatabaseId: z.string().describe('The JoyTree database ID to migrate INTO (from joytree_list_databases) — always one of your own provisioned databases, never external'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  }, async (args, client) => {
+    let source;
+    if (args.sourceKind === 'joytree') {
+      if (!args.sourceDatabaseId) throw new Error('sourceDatabaseId is required when sourceKind is "joytree"');
+      source = { kind: 'joytree', databaseId: args.sourceDatabaseId };
+    } else if (args.sourceKind === 'mongo') {
+      if (!args.connectionString) throw new Error('connectionString is required when sourceKind is "mongo"');
+      source = { kind: 'mongo', connectionString: args.connectionString };
+    } else if (args.sourceKind === 'firebase') {
+      if (!args.firebaseDatabaseUrl) throw new Error('firebaseDatabaseUrl is required when sourceKind is "firebase"');
+      source = { kind: 'firebase', databaseUrl: args.firebaseDatabaseUrl, authSecret: args.firebaseAuthSecret || null };
+    } else if (args.sourceKind === 'sql') {
+      if (!args.connectionString) throw new Error('connectionString is required when sourceKind is "sql"');
+      if (!args.sqlEngine) throw new Error('sqlEngine is required when sourceKind is "sql"');
+      source = { kind: 'sql', engine: args.sqlEngine, connectionString: args.connectionString };
+    } else if (args.sourceKind === 'redis') {
+      if (!args.connectionString) throw new Error('connectionString is required when sourceKind is "redis"');
+      source = { kind: 'redis', connectionString: args.connectionString };
+    }
+    return textResult(await client.post('/api/migrations', {
+      source,
+      destination: { databaseId: args.destinationDatabaseId },
+    }));
+  });
+
+  tool('joytree_list_migrations', {
+    title: 'List migrations',
+    description: 'List every migration you\'ve run (current in-progress ones plus history), most recent first.',
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  }, async (_args, client) => textResult(await client.get('/api/migrations')));
+
+  tool('joytree_get_migration', {
+    title: 'Get migration status/logs',
+    description: 'Get one migration\'s full status, result, and logs by ID (from joytree_start_migration or joytree_list_migrations). Poll this after starting a migration to see when it finishes.',
+    inputSchema: { migrationId: z.string() },
+    annotations: { readOnlyHint: true },
+  }, async (args, client) => textResult(await client.get(`/api/migrations/${encodeURIComponent(args.migrationId)}`)));
+
+  tool('joytree_delete_migration', {
+    title: 'Delete a migration history entry',
+    description: 'Permanently remove one migration from history by ID. Refuses if that migration is still running — wait for it to finish first.',
+    inputSchema: { migrationId: z.string() },
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  }, async (args, client) => textResult(await client.del(`/api/migrations/${encodeURIComponent(args.migrationId)}`)));
+
+  tool('joytree_clear_migration_history', {
+    title: 'Clear all migration history',
+    description: 'Permanently delete ALL finished migration history entries at once. Migrations still in progress are left running and untouched. Irreversible — confirm with the user before calling this.',
+    inputSchema: {},
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  }, async (_args, client) => textResult(await client.del('/api/migrations')));
+
   // ── Realtime API Builder (prompt-to-API) ──────────────────────────
   tool('joytree_create_api_from_prompt', {
     title: 'Generate a REST API from a text prompt',

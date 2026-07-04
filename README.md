@@ -20,12 +20,13 @@ processes.
 
 ## What it exposes
 
-18 tools covering the core "code with Claude, ship it" loop:
+23 tools covering the core "code with Claude, ship it" loop:
 
 - **Identity & projects** — `joytree_whoami`, `joytree_list_projects`, `joytree_get_project`, `joytree_delete_project`
 - **Deploy** — `joytree_deploy_from_github`, `joytree_list_deployments`, `joytree_runtime_logs`, `joytree_list_github_repos`
 - **Environment variables** — `joytree_env_list`, `joytree_env_set`, `joytree_env_delete`
 - **Databases** — `joytree_list_databases`, `joytree_create_database`, `joytree_get_database`, `joytree_database_lifecycle`
+- **Data Migration** — `joytree_start_migration`, `joytree_list_migrations`, `joytree_get_migration`, `joytree_delete_migration`, `joytree_clear_migration_history`
 - **Realtime API Builder** — `joytree_create_api_from_prompt`, `joytree_list_generated_apis`, `joytree_dockerize_api`
 
 Most read/lookup tools call JoyTree's versioned `/api/v1/*` surface rather
@@ -89,7 +90,7 @@ npm test
 
 This starts the server and runs `test/protocol-check.js` against it — a
 real MCP client that checks: an invalid/missing key is cleanly rejected,
-a valid handshake correctly lists all 18 tools, and an actual tool call
+a valid handshake correctly lists all 23 tools, and an actual tool call
 makes it through the full pipeline (parse → auth → dispatch → real HTTP
 call → clean error/result), not just that the server boots.
 
