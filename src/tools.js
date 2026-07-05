@@ -63,7 +63,7 @@ function registerJoyTreeTools(server, getClient) {
 
   tool('joytree_deploy_from_github', {
     title: 'Deploy a GitHub repo',
-    description: 'Deploy a project straight from a GitHub repository. This is the main "ship it" tool — call this once code is pushed and ready to go live. Framework/build settings are auto-detected if omitted.',
+    description: 'Deploy a project straight from a GitHub repository. This is the main "ship it" tool — call this once code is pushed and ready to go live. Framework/build settings are auto-detected if omitted. If there is no repo to push to (e.g. a project generated locally with no git remote), use joytree_deploy_from_zip instead.',
     inputSchema: {
       name: z.string().describe('Project name — also becomes the <name>.joytree.site subdomain unless a custom subdomain is given'),
       repoUrl: z.string().describe('GitHub repository URL, e.g. https://github.com/you/my-app'),
@@ -84,6 +84,33 @@ function registerJoyTreeTools(server, getClient) {
     startCmd: args.startCmd,
     outputDir: args.outputDir,
     siteType: args.siteType,
+  })));
+
+  tool('joytree_deploy_from_zip', {
+    title: 'Deploy from a zip archive (no repo needed)',
+    description: 'Deploy a project directly from its files, base64-encoded as a zip archive — for cases where there is no GitHub repo to point at, e.g. a project you (the AI) just generated locally. Build/start commands and runtime are auto-detected from the archive contents if omitted, the same way joytree_deploy_from_github auto-detects from a cloned repo. Zip the project directory (excluding node_modules and other build artifacts), base64-encode the bytes, and pass that string as zipBase64. Archives over ~190MB pre-encoding (260MB after base64 inflation) will be rejected — for larger projects, push to GitHub and use joytree_deploy_from_github instead.',
+    inputSchema: {
+      name: z.string().describe('Project name — also becomes the <n>.joytree.site subdomain unless a custom subdomain is given'),
+      zipBase64: z.string().describe('Base64-encoded bytes of a .zip archive containing the project files at its root (or a single top-level project folder)'),
+      subdomain: z.string().optional().describe('Custom subdomain, if different from the project name'),
+      buildCmd: z.string().optional().describe('Override the auto-detected build command'),
+      startCmd: z.string().optional().describe('Override the auto-detected start command (server apps only)'),
+      installCmd: z.string().optional().describe('Override the auto-detected install command'),
+      outputDir: z.string().optional().describe('Override the auto-detected output directory (static sites only)'),
+      siteType: z.enum(['static', 'server']).optional().describe('Force static vs. server app instead of auto-detecting'),
+      nodeVer: z.string().optional().describe('Node.js version, e.g. "20" (default: 20, or whatever package.json engines specifies)'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  }, async (args, client) => textResult(await client.post('/api/v1/deploy-from-zip', {
+    name: args.name,
+    subdomain: args.subdomain || args.name,
+    zipBase64: args.zipBase64,
+    buildCmd: args.buildCmd,
+    startCmd: args.startCmd,
+    installCmd: args.installCmd,
+    outputDir: args.outputDir,
+    siteType: args.siteType,
+    nodeVer: args.nodeVer,
   })));
 
   tool('joytree_list_deployments', {
