@@ -218,7 +218,7 @@ function registerJoyTreeTools(server, getClient) {
         '"joytree" = another one of your own JoyTree databases (needs sourceDatabaseId). ' +
         '"mongo" = an external MongoDB/Atlas cluster (needs connectionString, which MUST include a database name — Atlas\'s default "Copy connection string" button omits it, which would otherwise silently read from Mongo\'s own default "test" database instead). ' +
         '"firebase" = a Firebase Realtime Database (needs firebaseDatabaseUrl). ' +
-        '"sql" = an external MySQL, PostgreSQL, or MariaDB server (needs connectionString and sqlEngine). ' +
+        '"sql" = an external MySQL, PostgreSQL, or MariaDB server (needs connectionString and sqlEngine) — this is also how to migrate from Supabase, since Supabase\'s database is standard Postgres under the hood: use sqlEngine "postgres" with the connection string from Supabase\'s Project Settings → Database (either the pooler string on port 6543 or the direct one on port 5432 both work; SSL is handled automatically). ' +
         '"redis" = an external Redis instance (needs connectionString).'
       ),
       sourceDatabaseId: z.string().optional().describe('Required when sourceKind is "joytree" — the ID of one of your own JoyTree databases to migrate FROM (from joytree_list_databases)'),
