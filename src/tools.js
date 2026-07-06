@@ -88,10 +88,11 @@ function registerJoyTreeTools(server, getClient) {
 
   tool('joytree_deploy_from_zip', {
     title: 'Deploy from a zip archive (no repo needed)',
-    description: 'Deploy a project directly from its files, base64-encoded as a zip archive — for cases where there is no GitHub repo to point at, e.g. a project you (the AI) just generated locally. Build/start commands and runtime are auto-detected from the archive contents if omitted, the same way joytree_deploy_from_github auto-detects from a cloned repo. Zip the project directory (excluding node_modules and other build artifacts), base64-encode the bytes, and pass that string as zipBase64. Archives over ~190MB pre-encoding (260MB after base64 inflation) will be rejected — for larger projects, push to GitHub and use joytree_deploy_from_github instead.',
+    description: 'Deploy a project directly from its files, either as a base64-encoded zip archive or a URL to one — for cases where there is no GitHub repo to point at, e.g. a project you (the AI) just generated locally. Build/start commands and runtime are auto-detected from the archive contents if omitted, the same way joytree_deploy_from_github auto-detects from a cloned repo. Prefer zipUrl when the archive is already reachable at a URL (e.g. a GitHub archive link like https://github.com/<owner>/<repo>/archive/refs/heads/<branch>.zip, or a release asset) — the server fetches it directly, which is more reliable than inlining a large base64 string. Use zipBase64 only when there is no URL and the archive must be sent inline. Archives over ~190MB pre-encoding (260MB after base64 inflation, or as fetched via zipUrl) will be rejected — for larger projects, push to GitHub and use joytree_deploy_from_github instead.',
     inputSchema: {
       name: z.string().describe('Project name — also becomes the <n>.joytree.site subdomain unless a custom subdomain is given'),
-      zipBase64: z.string().describe('Base64-encoded bytes of a .zip archive containing the project files at its root (or a single top-level project folder)'),
+      zipUrl: z.string().optional().describe('URL to a downloadable .zip archive (must be https://). Preferred over zipBase64 when available — the server fetches it directly.'),
+      zipBase64: z.string().optional().describe('Base64-encoded bytes of a .zip archive containing the project files at its root (or a single top-level project folder). Only needed if zipUrl is not available.'),
       subdomain: z.string().optional().describe('Custom subdomain, if different from the project name'),
       buildCmd: z.string().optional().describe('Override the auto-detected build command'),
       startCmd: z.string().optional().describe('Override the auto-detected start command (server apps only)'),
@@ -104,6 +105,7 @@ function registerJoyTreeTools(server, getClient) {
   }, async (args, client) => textResult(await client.post('/api/v1/deploy-from-zip', {
     name: args.name,
     subdomain: args.subdomain || args.name,
+    zipUrl: args.zipUrl,
     zipBase64: args.zipBase64,
     buildCmd: args.buildCmd,
     startCmd: args.startCmd,
