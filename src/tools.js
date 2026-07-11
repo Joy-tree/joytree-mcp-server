@@ -210,17 +210,44 @@ function registerJoyTreeTools(server, getClient) {
   // always one of the account's own provisioned databases; the source can
   // be another JoyTree database, or an external MongoDB/Firebase RTDB/
   // MySQL/PostgreSQL/MariaDB/Redis instance reached by connection string.
+  //
+  // This same source shape (sourceKind + the fields relevant to it) is
+  // also used by joytree_compare_databases below, for BOTH sides of a
+  // comparison -- buildMigrationSourceFromArgs() is shared between them so
+  // the two tools can't drift apart on how a source gets resolved.
+  const sourceKindDescription =
+    '"joytree" = another one of your own JoyTree databases (needs sourceDatabaseId). ' +
+    '"mongo" = an external MongoDB/Atlas cluster (needs connectionString, which MUST include a database name — Atlas\'s default "Copy connection string" button omits it, which would otherwise silently read from Mongo\'s own default "test" database instead). ' +
+    '"firebase" = a Firebase Realtime Database (needs firebaseDatabaseUrl). ' +
+    '"sql" = an external MySQL, PostgreSQL, or MariaDB server (needs connectionString and sqlEngine) — this is also how to reach Supabase, since Supabase\'s database is standard Postgres under the hood: use sqlEngine "postgres" with the connection string from Supabase\'s Project Settings → Database (either the pooler string on port 6543 or the direct one on port 5432 both work; SSL is handled automatically). ' +
+    '"redis" = an external Redis instance (needs connectionString).';
+
+  function buildMigrationSourceFromArgs(args) {
+    if (args.sourceKind === 'joytree') {
+      if (!args.sourceDatabaseId) throw new Error('sourceDatabaseId is required when sourceKind is "joytree"');
+      return { kind: 'joytree', databaseId: args.sourceDatabaseId };
+    } else if (args.sourceKind === 'mongo') {
+      if (!args.connectionString) throw new Error('connectionString is required when sourceKind is "mongo"');
+      return { kind: 'mongo', connectionString: args.connectionString };
+    } else if (args.sourceKind === 'firebase') {
+      if (!args.firebaseDatabaseUrl) throw new Error('firebaseDatabaseUrl is required when sourceKind is "firebase"');
+      return { kind: 'firebase', databaseUrl: args.firebaseDatabaseUrl, authSecret: args.firebaseAuthSecret || null };
+    } else if (args.sourceKind === 'sql') {
+      if (!args.connectionString) throw new Error('connectionString is required when sourceKind is "sql"');
+      if (!args.sqlEngine) throw new Error('sqlEngine is required when sourceKind is "sql"');
+      return { kind: 'sql', engine: args.sqlEngine, connectionString: args.connectionString };
+    } else if (args.sourceKind === 'redis') {
+      if (!args.connectionString) throw new Error('connectionString is required when sourceKind is "redis"');
+      return { kind: 'redis', connectionString: args.connectionString };
+    }
+    throw new Error(`Unknown sourceKind: ${args.sourceKind}`);
+  }
+
   tool('joytree_start_migration', {
     title: 'Start a data migration',
     description: 'Move all data from a source database into one of your JoyTree databases, regardless of engine (e.g. Mongo to MySQL, Firebase to Postgres, Redis to MariaDB — translation between data models is handled automatically). Runs in the background — use joytree_get_migration to poll progress with the returned migrationId.',
     inputSchema: {
-      sourceKind: z.enum(['joytree', 'mongo', 'firebase', 'sql', 'redis']).describe(
-        '"joytree" = another one of your own JoyTree databases (needs sourceDatabaseId). ' +
-        '"mongo" = an external MongoDB/Atlas cluster (needs connectionString, which MUST include a database name — Atlas\'s default "Copy connection string" button omits it, which would otherwise silently read from Mongo\'s own default "test" database instead). ' +
-        '"firebase" = a Firebase Realtime Database (needs firebaseDatabaseUrl). ' +
-        '"sql" = an external MySQL, PostgreSQL, or MariaDB server (needs connectionString and sqlEngine) — this is also how to migrate from Supabase, since Supabase\'s database is standard Postgres under the hood: use sqlEngine "postgres" with the connection string from Supabase\'s Project Settings → Database (either the pooler string on port 6543 or the direct one on port 5432 both work; SSL is handled automatically). ' +
-        '"redis" = an external Redis instance (needs connectionString).'
-      ),
+      sourceKind: z.enum(['joytree', 'mongo', 'firebase', 'sql', 'redis']).describe(sourceKindDescription),
       sourceDatabaseId: z.string().optional().describe('Required when sourceKind is "joytree" — the ID of one of your own JoyTree databases to migrate FROM (from joytree_list_databases)'),
       connectionString: z.string().optional().describe('Required when sourceKind is "mongo", "sql", or "redis" — the external database\'s connection string. Used once for this migration only, never stored.'),
       sqlEngine: z.enum(['mysql', 'postgres', 'mariadb']).optional().describe('Required when sourceKind is "sql" — which engine connectionString connects to'),
@@ -230,28 +257,41 @@ function registerJoyTreeTools(server, getClient) {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => {
-    let source;
-    if (args.sourceKind === 'joytree') {
-      if (!args.sourceDatabaseId) throw new Error('sourceDatabaseId is required when sourceKind is "joytree"');
-      source = { kind: 'joytree', databaseId: args.sourceDatabaseId };
-    } else if (args.sourceKind === 'mongo') {
-      if (!args.connectionString) throw new Error('connectionString is required when sourceKind is "mongo"');
-      source = { kind: 'mongo', connectionString: args.connectionString };
-    } else if (args.sourceKind === 'firebase') {
-      if (!args.firebaseDatabaseUrl) throw new Error('firebaseDatabaseUrl is required when sourceKind is "firebase"');
-      source = { kind: 'firebase', databaseUrl: args.firebaseDatabaseUrl, authSecret: args.firebaseAuthSecret || null };
-    } else if (args.sourceKind === 'sql') {
-      if (!args.connectionString) throw new Error('connectionString is required when sourceKind is "sql"');
-      if (!args.sqlEngine) throw new Error('sqlEngine is required when sourceKind is "sql"');
-      source = { kind: 'sql', engine: args.sqlEngine, connectionString: args.connectionString };
-    } else if (args.sourceKind === 'redis') {
-      if (!args.connectionString) throw new Error('connectionString is required when sourceKind is "redis"');
-      source = { kind: 'redis', connectionString: args.connectionString };
-    }
+    const source = buildMigrationSourceFromArgs(args);
     return textResult(await client.post('/api/migrations', {
       source,
       destination: { databaseId: args.destinationDatabaseId },
     }));
+  });
+
+  // ── Compare Databases ─────────────────────────────────────────────────
+  // A genuinely novel capability: diffs two databases collection-by-
+  // collection and row-by-row, reporting exactly what's added, removed,
+  // and changed -- even across completely different engines. Both sides
+  // are described with the exact same source shape joytree_start_migration
+  // uses (see buildMigrationSourceFromArgs above), just nested under
+  // databaseA/databaseB instead of a single top-level source.
+  const compareSourceSchema = z.object({
+    sourceKind: z.enum(['joytree', 'mongo', 'firebase', 'sql', 'redis']).describe(sourceKindDescription),
+    sourceDatabaseId: z.string().optional().describe('Required when sourceKind is "joytree"'),
+    connectionString: z.string().optional().describe('Required when sourceKind is "mongo", "sql", or "redis". Used once for this comparison only, never stored.'),
+    sqlEngine: z.enum(['mysql', 'postgres', 'mariadb']).optional().describe('Required when sourceKind is "sql"'),
+    firebaseDatabaseUrl: z.string().optional().describe('Required when sourceKind is "firebase"'),
+    firebaseAuthSecret: z.string().optional().describe('Optional Firebase legacy database secret'),
+  });
+
+  tool('joytree_compare_databases', {
+    title: 'Compare two databases',
+    description: 'Compare two databases and see exactly what differs -- added, removed, and changed rows/documents, with field-level before/after values for anything changed. Works even when the two sides are completely different engines (e.g. a MongoDB collection vs. a Postgres table vs. a Redis keyspace), since everything is normalized to the same shape before comparing. Rows are matched by id where one exists, or by content otherwise, so reordered data still compares correctly.',
+    inputSchema: {
+      databaseA: compareSourceSchema.describe('The first database to compare'),
+      databaseB: compareSourceSchema.describe('The second database to compare'),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  }, async (args, client) => {
+    const sourceA = buildMigrationSourceFromArgs(args.databaseA);
+    const sourceB = buildMigrationSourceFromArgs(args.databaseB);
+    return textResult(await client.post('/api/databases/diff', { sourceA, sourceB }));
   });
 
   tool('joytree_list_migrations', {
