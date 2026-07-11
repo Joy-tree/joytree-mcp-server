@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { execSync } = require('child_process');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { mcpAuthRouter } = require('@modelcontextprotocol/sdk/server/auth/router.js');
@@ -11,6 +12,24 @@ const { JoyTreeOAuthProvider } = require('./oauth-provider');
 
 const PORT = process.env.PORT || 8787;
 const PUBLIC_URL = process.env.MCP_PUBLIC_URL || `http://localhost:${PORT}`;
+
+// [FIX] /health used to only report { ok: true } -- enough to confirm the
+// process is up, but useless for the question that actually matters after
+// a manual deploy: "is this the build I just pushed, or a stale one from
+// before?" Since deploys here are triggered manually rather than on every
+// push, that question previously had no answer short of guessing. Now it
+// reports the package version and (best-effort) git commit the running
+// process was actually started from, so a single request answers it.
+const PACKAGE_VERSION = require('../package.json').version;
+const STARTED_AT = new Date().toISOString();
+let GIT_COMMIT = 'unknown';
+try {
+  GIT_COMMIT = execSync('git rev-parse HEAD', { cwd: __dirname + '/..' }).toString().trim();
+} catch (_) {
+  // No .git directory in this deploy (e.g. a zip/tarball deploy rather than
+  // a git clone) -- fall back to whatever the deploy pipeline set explicitly.
+  GIT_COMMIT = process.env.GIT_COMMIT || process.env.SOURCE_COMMIT || 'unknown';
+}
 
 const oauthProvider = new JoyTreeOAuthProvider();
 
@@ -83,7 +102,13 @@ app.use(mcpAuthRouter({
 
 app.use(express.json({ limit: '2mb' }));
 
-app.get('/health', (_req, res) => res.status(200).json({ ok: true }));
+app.get('/health', (_req, res) => res.status(200).json({
+  ok: true,
+  version: PACKAGE_VERSION,
+  commit: GIT_COMMIT,
+  startedAt: STARTED_AT,
+  uptimeSeconds: Math.round(process.uptime()),
+}));
 
 app.get('/privacy', (_req, res) => {
   res.status(200).set('Content-Type', 'text/html').send(PRIVACY_POLICY_HTML);
