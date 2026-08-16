@@ -88,7 +88,7 @@ function registerJoyTreeTools(server, getClient) {
 
   tool('joytree_deploy_from_zip', {
     title: 'Deploy from a zip archive (no repo needed)',
-    description: 'Deploy a project directly from its files, either as a base64-encoded zip archive or a URL to one — for cases where there is no GitHub repo to point at, e.g. a project you (the AI) just generated locally. Build/start commands and runtime are auto-detected from the archive contents if omitted, the same way joytree_deploy_from_github auto-detects from a cloned repo. Prefer zipUrl when the archive is already reachable at a URL (e.g. a GitHub archive link like https://github.com/<owner>/<repo>/archive/refs/heads/<branch>.zip, or a release asset) — the server fetches it directly, which is more reliable than inlining a large base64 string. Use zipBase64 only when there is no URL and the archive must be sent inline. Archives over ~190MB pre-encoding (260MB after base64 inflation, or as fetched via zipUrl) will be rejected — for larger projects, push to GitHub and use joytree_deploy_from_github instead.',
+    description: 'Deploy a project directly from its files, either as a base64-encoded zip archive or a URL to one — for cases where there is no GitHub repo to point at, e.g. a project you (the AI) just generated locally. Build/start commands and runtime are auto-detected from the archive contents if omitted, the same way joytree_deploy_from_github auto-detects from a cloned repo. Prefer zipUrl when the archive is already reachable at a URL (e.g. a GitHub archive link like https://github.com/<owner>/<repo>/archive/refs/heads/<branch>.zip, or a release asset) — the server fetches it directly, which is more reliable than inlining a large base64 string. Use zipBase64 only for genuinely small archives (a handful of files, roughly under a few MB) that comfortably fit as one base64 string in a single tool call. For anything larger with no URL available, use joytree_zip_upload_start / joytree_zip_upload_chunk / joytree_zip_upload_finish instead — they send the same archive as many small chunks rather than one large call. Archives over ~190MB pre-encoding (260MB after base64 inflation, or as fetched via zipUrl) will be rejected — for larger projects, push to GitHub and use joytree_deploy_from_github instead.',
     inputSchema: {
       name: z.string().describe('Project name — also becomes the <n>.joytree.site subdomain unless a custom subdomain is given'),
       zipUrl: z.string().optional().describe('URL to a downloadable .zip archive (must be https://). Preferred over zipBase64 when available — the server fetches it directly.'),
@@ -107,6 +107,70 @@ function registerJoyTreeTools(server, getClient) {
     subdomain: args.subdomain || args.name,
     zipUrl: args.zipUrl,
     zipBase64: args.zipBase64,
+    buildCmd: args.buildCmd,
+    startCmd: args.startCmd,
+    installCmd: args.installCmd,
+    outputDir: args.outputDir,
+    siteType: args.siteType,
+    nodeVer: args.nodeVer,
+  })));
+
+  // ── Chunked zip deploy (bridge for large archives) ───────────────────
+  // joytree_deploy_from_zip above requires the ENTIRE archive as one
+  // base64 string in a single tool call -- fine for small projects, but
+  // for anything bigger, generating that string is bounded by the calling
+  // AI's own per-call output budget, not by anything this server enforces
+  // (deploy-from-zip itself accepts up to 260MB). These three tools break
+  // the same underlying upload into many small calls instead: start a
+  // session, send the archive as a sequence of modest base64 chunks (each
+  // its own small, safe tool call), then finish -- at which point the
+  // server has already reassembled the full archive server-side and hands
+  // off to the exact same deploy pipeline deploy-from-zip already uses.
+  // The calling AI never makes a network request itself; every step is an
+  // ordinary MCP tool call.
+  tool('joytree_zip_upload_start', {
+    title: 'Start a chunked zip upload',
+    description: 'Step 1 of 3 for deploying a large project with no GitHub repo. Opens an upload session on the server for an archive you\'ll send in pieces via joytree_zip_upload_chunk. Use this instead of joytree_deploy_from_zip whenever the archive is too large to comfortably send as one base64 string in a single tool call (roughly a few MB of source or more) -- for small projects, joytree_deploy_from_zip in one call is simpler and preferred. The session expires after 20 minutes of inactivity.',
+    inputSchema: {
+      totalBytes: z.number().int().positive().describe('Total size of the RAW (pre-base64) zip archive, in bytes. Used to validate the upload and reject anything over the 260MB limit up front rather than after uploading.'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  }, async (args, client) => textResult(await client.post('/api/v1/zip-uploads', {
+    totalBytes: args.totalBytes,
+  })));
+
+  tool('joytree_zip_upload_chunk', {
+    title: 'Send one chunk of a zip upload',
+    description: 'Step 2 of 3 (call repeatedly). Sends one piece of the archive started with joytree_zip_upload_start. Keep each chunk\'s base64 text to roughly 150-250KB (i.e. ~110-190KB of raw archive bytes per chunk) so every individual tool call stays small; call this in order, chunkIndex 0, 1, 2, ... with no gaps, until the whole archive has been sent. The response reports how many bytes the server has received so far.',
+    inputSchema: {
+      uploadId: z.string().describe('The uploadId returned by joytree_zip_upload_start'),
+      chunkIndex: z.number().int().nonnegative().describe('0-based index of this chunk, in order, no gaps or repeats'),
+      chunkBase64: z.string().describe('Base64-encoded bytes of this slice of the archive'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  }, async (args, client) => textResult(await client.post(`/api/v1/zip-uploads/${encodeURIComponent(args.uploadId)}/chunk`, {
+    chunkIndex: args.chunkIndex,
+    chunkBase64: args.chunkBase64,
+  })));
+
+  tool('joytree_zip_upload_finish', {
+    title: 'Finish a chunked zip upload and deploy',
+    description: 'Step 3 of 3. Call once every chunk from joytree_zip_upload_chunk has been sent and their reported received-bytes total matches the totalBytes given to joytree_zip_upload_start. Assembles the uploaded chunks into the final archive server-side and deploys it -- same auto-detection and build pipeline as joytree_deploy_from_zip.',
+    inputSchema: {
+      uploadId: z.string().describe('The uploadId from joytree_zip_upload_start'),
+      name: z.string().describe('Project name — also becomes the <n>.joytree.site subdomain unless a custom subdomain is given'),
+      subdomain: z.string().optional().describe('Custom subdomain, if different from the project name'),
+      buildCmd: z.string().optional().describe('Override the auto-detected build command'),
+      startCmd: z.string().optional().describe('Override the auto-detected start command (server apps only)'),
+      installCmd: z.string().optional().describe('Override the auto-detected install command'),
+      outputDir: z.string().optional().describe('Override the auto-detected output directory (static sites only)'),
+      siteType: z.enum(['static', 'server']).optional().describe('Force static vs. server app instead of auto-detecting'),
+      nodeVer: z.string().optional().describe('Node.js version, e.g. "20" (default: 20, or whatever package.json engines specifies)'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  }, async (args, client) => textResult(await client.post(`/api/v1/zip-uploads/${encodeURIComponent(args.uploadId)}/finish`, {
+    name: args.name,
+    subdomain: args.subdomain || args.name,
     buildCmd: args.buildCmd,
     startCmd: args.startCmd,
     installCmd: args.installCmd,
