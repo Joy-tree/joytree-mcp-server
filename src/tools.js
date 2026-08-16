@@ -130,22 +130,24 @@ function registerJoyTreeTools(server, getClient) {
   // ordinary MCP tool call.
   tool('joytree_zip_upload_start', {
     title: 'Start a chunked zip upload',
-    description: 'Step 1 of 3 for deploying a large project with no GitHub repo. Opens an upload session on the server for an archive you\'ll send in pieces via joytree_zip_upload_chunk. Use this instead of joytree_deploy_from_zip whenever the archive is too large to comfortably send as one base64 string in a single tool call (roughly a few MB of source or more) -- for small projects, joytree_deploy_from_zip in one call is simpler and preferred. The session expires after 20 minutes of inactivity.',
+    description: 'Step 1 of 3 for deploying a large project with no GitHub repo. Opens an upload session on the server for an archive you\'ll send in pieces via joytree_zip_upload_chunk. Use this instead of joytree_deploy_from_zip whenever the archive is too large to comfortably send as one base64 string in a single tool call (roughly a few MB of source or more) -- for small projects, joytree_deploy_from_zip in one call is simpler and preferred. The session expires after 20 minutes of inactivity. Strongly recommended: pass sha256, the SHA-256 hex digest of the complete RAW zip file (before any base64 encoding) -- joytree_zip_upload_finish verifies the reassembled archive against it byte-for-byte and refuses to deploy on a mismatch, catching any corruption from chunking or transit instead of silently deploying a broken build.',
     inputSchema: {
       totalBytes: z.number().int().positive().describe('Total size of the RAW (pre-base64) zip archive, in bytes. Used to validate the upload and reject anything over the 260MB limit up front rather than after uploading.'),
+      sha256: z.string().optional().describe('SHA-256 hex digest (64 lowercase hex characters) of the complete RAW zip file, computed BEFORE base64 encoding. Strongly recommended -- verified on joytree_zip_upload_finish.'),
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => textResult(await client.post('/api/v1/zip-uploads', {
     totalBytes: args.totalBytes,
+    sha256: args.sha256,
   })));
 
   tool('joytree_zip_upload_chunk', {
     title: 'Send one chunk of a zip upload',
-    description: 'Step 2 of 3 (call repeatedly). Sends one piece of the archive started with joytree_zip_upload_start. Keep each chunk\'s base64 text to roughly 150-250KB (i.e. ~110-190KB of raw archive bytes per chunk) so every individual tool call stays small; call this in order, chunkIndex 0, 1, 2, ... with no gaps, until the whole archive has been sent. The response reports how many bytes the server has received so far.',
+    description: 'Step 2 of 3 (call repeatedly). Sends one piece of the archive started with joytree_zip_upload_start. IMPORTANT — how to chunk correctly: slice the RAW zip file\'s bytes first (e.g. bytes 0-150000, then 150000-300000, ...), THEN base64-encode each raw slice independently, so every chunkBase64 is a complete, valid, standalone base64 string on its own. Do NOT base64-encode the whole archive first and then cut the resulting TEXT into pieces — a mid-string slice of base64 text is not independently decodable and will corrupt the archive (this is caught on finish and rejected, but avoid it: chunk the source bytes, not the encoded text). Keep each chunk to roughly 150-250KB of base64 text (~110-190KB of raw bytes) so every call stays small. Call in order, chunkIndex 0, 1, 2, ... with no gaps or repeats, until the whole archive has been sent.',
     inputSchema: {
       uploadId: z.string().describe('The uploadId returned by joytree_zip_upload_start'),
       chunkIndex: z.number().int().nonnegative().describe('0-based index of this chunk, in order, no gaps or repeats'),
-      chunkBase64: z.string().describe('Base64-encoded bytes of this slice of the archive'),
+      chunkBase64: z.string().describe('Base64 encoding of a contiguous slice of the RAW archive bytes (encode the raw slice itself, not a piece of an already-fully-encoded string)'),
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => textResult(await client.post(`/api/v1/zip-uploads/${encodeURIComponent(args.uploadId)}/chunk`, {
@@ -155,7 +157,7 @@ function registerJoyTreeTools(server, getClient) {
 
   tool('joytree_zip_upload_finish', {
     title: 'Finish a chunked zip upload and deploy',
-    description: 'Step 3 of 3. Call once every chunk from joytree_zip_upload_chunk has been sent and their reported received-bytes total matches the totalBytes given to joytree_zip_upload_start. Assembles the uploaded chunks into the final archive server-side and deploys it -- same auto-detection and build pipeline as joytree_deploy_from_zip.',
+    description: 'Step 3 of 3. Call once every chunk from joytree_zip_upload_chunk has been sent and their reported received-bytes total matches the totalBytes given to joytree_zip_upload_start. The server verifies the reassembled archive (a zip-signature check always, plus a full sha256 comparison if one was given to joytree_zip_upload_start) before doing anything else — if verification fails, nothing is deployed and the error explains why; start a fresh upload session rather than retrying finish. On success, assembles the uploaded chunks into the final archive server-side and deploys it -- same auto-detection and build pipeline as joytree_deploy_from_zip.',
     inputSchema: {
       uploadId: z.string().describe('The uploadId from joytree_zip_upload_start'),
       name: z.string().describe('Project name — also becomes the <n>.joytree.site subdomain unless a custom subdomain is given'),
