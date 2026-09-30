@@ -12,11 +12,15 @@ const stubServer = {
 };
 
 const calls = [];
-const client = {};
+const recordingClient = {};
 for (const m of ['get', 'post', 'put', 'patch', 'del']) {
-  client[m] = async (path, body) => { calls.push({ method: m.toUpperCase(), path, body }); return { ok: true }; };
+  const verb = m === 'del' ? 'DELETE' : m.toUpperCase();
+  recordingClient[m] = async (path, body) => { calls.push({ method: verb, path, body }); return { ok: true }; };
 }
-registerJoyTreeTools(stubServer, () => client);
+// Tests can swap in a custom client (e.g. one that returns canned GET data).
+let activeClient = recordingClient;
+const useClient = (c) => { activeClient = c || recordingClient; };
+registerJoyTreeTools(stubServer, () => activeClient);
 
 async function call(name, args) {
   calls.length = 0;
@@ -49,7 +53,7 @@ test('deploy_from_zip and zip finish forward the same options', async () => {
   assert.strictEqual(f.calls[0].body.isWorker, true);
 });
 
-module.exports = { test, tests, call, handlers, schemas, calls };
+module.exports = { test, tests, call, handlers, schemas, calls, useClient };
 
 if (require.main === module) {
   (async () => {

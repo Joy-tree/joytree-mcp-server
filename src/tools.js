@@ -518,6 +518,175 @@ function registerJoyTreeTools(server, getClient) {
   }, async (args, client) => textResult(await client.post('/api/blueprints/browse', { repoUrl: args.repoUrl, branch: args.branch, dir: args.dir })));
 
 
+  // -- Firewall (per project; Pro plan and above) ----------------------
+  const fw = (projectId) => `/api/projects/${enc(projectId)}/firewall`;
+  const PRO_NOTE = ' Requires the Pro plan or above.';
+
+  tool('joytree_firewall_get', {
+    title: 'Get a project firewall configuration',
+    description: 'Return the full firewall configuration for a project: custom rules (with hit counts), blocked IPs, bypass IPs, bot management, DDoS protection, managed OWASP ruleset, security headers, Attack Mode state, plan limits, and the catalog of condition fields/operators/actions usable in rules. Call this first to see what exists and to get rule/entry ids.' + PRO_NOTE,
+    inputSchema: { projectId: z.string().describe('Project ID, subdomain or name') },
+    annotations: { readOnlyHint: true },
+  }, async (args, client) => textResult(await client.get(fw(args.projectId))));
+
+  const conditionShape = z.object({
+    field: z.enum(['path', 'query', 'query_param', 'method', 'host', 'ip', 'country', 'user_agent', 'referer', 'header', 'cookie', 'scheme', 'client']),
+    op: z.enum(['eq', 'neq', 'contains', 'not_contains', 'starts_with', 'ends_with', 'matches', 'in', 'not_in', 'exists', 'not_exists']),
+    name: z.string().optional().describe('Header / cookie / query-parameter name (required for field = header, cookie or query_param)'),
+    value: z.union([z.string(), z.array(z.string())]).optional().describe('Value to compare; an array (or comma-separated string) for in / not_in. Omit for exists / not_exists.'),
+  });
+  const ruleShape = z.object({
+    name: z.string().describe('Short rule name'),
+    description: z.string().optional(),
+    enabled: z.boolean().optional().describe('Default true'),
+    groups: z.array(z.array(conditionShape)).describe('OR of AND-groups: the rule matches if ALL conditions in ANY one inner array match. Example: [[{field:"path",op:"starts_with",value:"/admin"},{field:"country",op:"not_in",value:["US"]}]]'),
+    action: z.object({
+      type: z.enum(['log', 'deny', 'challenge', 'bypass', 'rate_limit', 'redirect']),
+      status: z.number().int().optional().describe('deny: 400/401/403/404/410/451; redirect: 301/302/307/308'),
+      message: z.string().optional().describe('deny: response message'),
+      requests: z.number().int().optional().describe('rate_limit: max requests per window'),
+      windowSec: z.number().int().optional().describe('rate_limit: window length in seconds'),
+      keyBy: z.enum(['ip', 'ip_ua', 'path_ip', 'header']).optional().describe('rate_limit: what to count per'),
+      headerName: z.string().optional().describe('rate_limit with keyBy = header'),
+      onExceed: z.enum(['deny', 'challenge', 'log']).optional().describe('rate_limit: what to do once the limit is exceeded'),
+      location: z.string().optional().describe('redirect: target, starting with / or https://'),
+    }),
+  });
+
+  tool('joytree_firewall_rule', {
+    title: 'Manage firewall rules',
+    description: 'Add, replace, enable, disable, delete or reorder custom firewall rules on a project. Rules are evaluated in order. action "add" needs rule; "update" needs ruleId + the full replacement rule; "enable"/"disable"/"delete" need ruleId; "reorder" needs orderedIds listing EVERY rule id in the new order. A deny or challenge rule can lock real visitors (or the owner) out, so prefer adding with action type "log" first, or test it with joytree_firewall_simulate, and confirm with the user before enabling blocking rules.' + PRO_NOTE,
+    inputSchema: {
+      projectId: z.string().describe('Project ID, subdomain or name'),
+      action: z.enum(['add', 'update', 'enable', 'disable', 'delete', 'reorder']),
+      ruleId: z.string().optional().describe('Rule id (from joytree_firewall_get) for update/enable/disable/delete'),
+      rule: ruleShape.optional().describe('The rule definition for add / update'),
+      orderedIds: z.array(z.string()).optional().describe('All rule ids in the desired order, for reorder'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  }, async (args, client) => {
+    const base = fw(args.projectId);
+    const needRule = () => { if (!args.ruleId) throw new Error(`ruleId is required for action "${args.action}".`); return enc(args.ruleId); };
+    switch (args.action) {
+      case 'add':
+        if (!args.rule) throw new Error('rule is required for action "add".');
+        return textResult(await client.post(`${base}/rules`, args.rule));
+      case 'update':
+        if (!args.rule) throw new Error('rule is required for action "update".');
+        return textResult(await client.put(`${base}/rules/${needRule()}`, args.rule));
+      case 'enable':
+      case 'disable':
+        return textResult(await client.patch(`${base}/rules/${needRule()}`, { enabled: args.action === 'enable' }));
+      case 'delete':
+        return textResult(await client.del(`${base}/rules/${needRule()}`));
+      case 'reorder':
+        if (!args.orderedIds || !args.orderedIds.length) throw new Error('orderedIds is required for action "reorder".');
+        return textResult(await client.post(`${base}/rules/reorder`, { ids: args.orderedIds }));
+      default:
+        throw new Error('Unknown action.');
+    }
+  });
+
+  tool('joytree_firewall_ip_list', {
+    title: 'Block or allow IP addresses',
+    description: 'Manage the project\'s IP block list (visitors from these IPs/CIDR ranges are denied) or bypass list (these IPs skip system mitigations such as DDoS and bot checks, e.g. your office or a monitoring service). Add up to 200 addresses at a time; remove by entry id or by the same IP/CIDR that was added. Never block an IP unless the user asked for it - a wrong block can lock them out.' + PRO_NOTE,
+    inputSchema: {
+      projectId: z.string().describe('Project ID, subdomain or name'),
+      list: z.enum(['block', 'bypass']).describe('block = deny list, bypass = allow-through list'),
+      action: z.enum(['add', 'remove']),
+      ips: z.array(z.string()).optional().describe('IPv4/IPv6 addresses or CIDR ranges, e.g. ["203.0.113.7", "198.51.100.0/24"]'),
+      ids: z.array(z.string()).optional().describe('Entry ids to remove (alternative to ips for remove)'),
+      host: z.string().optional().describe('Limit the entry to one hostname, or * for all (default *)'),
+      note: z.string().optional().describe('Short note explaining why'),
+      expires: z.enum(['never', '1h', '24h', '7d', '30d']).optional().describe('Block list only: auto-expire the block (default never)'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  }, async (args, client) => {
+    const base = fw(args.projectId);
+    const path = args.list === 'block' ? 'ip-blocks' : 'bypass';
+    if (args.action === 'add') {
+      if (!args.ips || !args.ips.length) throw new Error('ips is required for action "add".');
+      const body = { ips: args.ips, host: args.host, note: args.note };
+      if (args.list === 'block') body.expires = args.expires;
+      return textResult(await client.post(`${base}/${path}`, body));
+    }
+    let ids = args.ids;
+    if (!ids || !ids.length) {
+      if (!args.ips || !args.ips.length) throw new Error('Provide ids or ips to remove.');
+      const cfg = await client.get(base);
+      const entries = (args.list === 'block' ? cfg.ipBlocks : cfg.bypass) || [];
+      const wanted = new Set(args.ips.map(x => String(x).trim()));
+      ids = entries.filter(e => wanted.has(e.ip)).map(e => e.id);
+      if (!ids.length) throw new Error('None of those addresses are on the ' + args.list + ' list.');
+    }
+    return textResult(await client.post(`${base}/${path}/delete`, { ids }));
+  });
+
+  tool('joytree_firewall_settings', {
+    title: 'Update firewall protection settings',
+    description: 'Update one protection section of a project\'s firewall. Only the fields you pass change. bots: { protection: off|log|challenge|block, aiBots: allow|log|block|labyrinth, aiAllow: [botNames], allowVerified, allowLinkPreview, excludePaths }. ddos: { sensitivity: low|medium|high, action: block|challenge|log, autoAttack: { enabled, rps, durationMin } }. owasp (managed ruleset): { enabled, paranoia: 1-3, action: log|deny|challenge, categories: { <id>: bool }, overrides: { <ruleId>: off|log|deny|challenge } }. headers and responses: see the current values from joytree_firewall_get. Start new blocking modes in "log" to watch for false positives.' + PRO_NOTE,
+    inputSchema: {
+      projectId: z.string().describe('Project ID, subdomain or name'),
+      section: z.enum(['bots', 'ddos', 'owasp', 'headers', 'responses']),
+      settings: z.record(z.any()).describe('The fields to change for that section'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  }, async (args, client) => textResult(await client.put(`${fw(args.projectId)}/settings/${enc(args.section)}`, args.settings)));
+
+  tool('joytree_firewall_attack_mode', {
+    title: 'Turn Attack Mode on or off',
+    description: 'Enable or disable Attack Mode, which applies strict DDoS mitigation to a project while it is under attack. When enabling, durationMin must be 15, 60, 360 or 1440 minutes (leave out for the default). May challenge or block legitimate visitors while on - confirm with the user first.' + PRO_NOTE,
+    inputSchema: {
+      projectId: z.string().describe('Project ID, subdomain or name'),
+      enabled: z.boolean(),
+      durationMin: z.union([z.literal(15), z.literal(60), z.literal(360), z.literal(1440)]).optional().describe('Minutes until Attack Mode switches itself off'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  }, async (args, client) => textResult(await client.post(`${fw(args.projectId)}/attack`, { enabled: args.enabled, durationMin: args.durationMin })));
+
+  tool('joytree_firewall_simulate', {
+    title: 'Test a request against the firewall',
+    description: 'Dry-run a made-up request through the project\'s firewall without touching real traffic. With no draft rule it returns the decision the live pipeline would make (allow/deny/challenge and which rule or mitigation caused it). With draftRule it reports whether that unsaved rule would match the request. Use this to verify a rule before adding it.' + PRO_NOTE,
+    inputSchema: {
+      projectId: z.string().describe('Project ID, subdomain or name'),
+      request: z.object({
+        path: z.string().optional().describe('Path plus optional query, e.g. /admin?x=1'),
+        method: z.string().optional().describe('HTTP method (default GET)'),
+        ip: z.string().optional().describe('Client IP (default 203.0.113.7)'),
+        country: z.string().optional().describe('Two-letter country code'),
+        host: z.string().optional(),
+        ua: z.string().optional().describe('User-Agent'),
+        referer: z.string().optional(),
+        cookie: z.string().optional(),
+        headers: z.record(z.string()).optional(),
+        scheme: z.enum(['http', 'https']).optional(),
+      }).describe('The test request'),
+      draftRule: ruleShape.optional().describe('An unsaved rule to test instead of the whole pipeline'),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args, client) => textResult(await client.post(`${fw(args.projectId)}/simulate`, { request: args.request, rule: args.draftRule })));
+
+  tool('joytree_firewall_activity', {
+    title: 'Firewall analytics, events and insights',
+    description: 'Read what the firewall has been doing for a project. view "analytics" = counts of allowed/blocked/challenged traffic over a range; "events" = recent individual firewall events (filterable); "insights" = automatic recommendations such as exposed admin paths or missing rate limits.' + PRO_NOTE,
+    inputSchema: {
+      projectId: z.string().describe('Project ID, subdomain or name'),
+      view: z.enum(['analytics', 'events', 'insights']),
+      range: z.string().optional().describe('analytics only: e.g. 1h, 24h, 7d'),
+      limit: z.number().int().min(1).max(500).optional().describe('events only: how many to return (default 100)'),
+      action: z.string().optional().describe('events only: filter by action, e.g. deny, challenge, log, allow'),
+      source: z.string().optional().describe('events only: filter by source: custom_rule, ip_block, rate_limit, ddos, attack_mode, bot, ai_bot, labyrinth or owasp'),
+      q: z.string().optional().describe('events only: text search'),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args, client) => {
+    const base = fw(args.projectId);
+    if (args.view === 'analytics') return textResult(await client.get(`${base}/analytics${qs({ range: args.range })}`));
+    if (args.view === 'insights') return textResult(await client.get(`${base}/insights`));
+    return textResult(await client.get(`${base}/events${qs({ limit: args.limit, action: args.action, source: args.source, q: args.q })}`));
+  });
+
+
   // ── GitHub helper ───────────────────────────────────────────────────
   tool('joytree_list_github_repos', {
     title: 'List connected GitHub repos',
