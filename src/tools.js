@@ -687,6 +687,137 @@ function registerJoyTreeTools(server, getClient) {
   });
 
 
+  // -- Observability (traffic, latency, errors, CPU/memory, alerts) ----
+  const obsRange = z.enum(['15m', '1h', '6h', '24h', '7d', '30d']).optional().describe('Time window (default 24h)');
+  const obsProject = z.string().optional().describe('Limit to one project (id or subdomain). Omit for all projects.');
+
+  tool('joytree_observability_summary', {
+    title: 'Traffic and health summary',
+    description: 'High-level observability summary for all projects or one: request counts, error rates, latency percentiles, bandwidth, cache hit rate, cache status breakdown and a per-project breakdown. The best first call when asked "how is my site doing?" or "is anything wrong?".',
+    inputSchema: { range: obsRange, project: obsProject },
+    annotations: { readOnlyHint: true },
+  }, async (args, client) => textResult(await client.get(`/api/observability/summary${qs({ range: args.range, project: args.project })}`)));
+
+  tool('joytree_observability_resources', {
+    title: 'Live CPU / memory / uptime per resource',
+    description: 'List every project container and database with whether it is running, current CPU and memory use against its limit, and uptime percentage with a timeline. The returned "key" (e.g. project:abc123 or database:def456) is what joytree_observability_series needs for CPU/memory metrics.',
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  }, async (_args, client) => textResult(await client.get('/api/observability/resources')));
+
+  tool('joytree_observability_series', {
+    title: 'Metric time series',
+    description: 'Get one metric over time, with a summary. Request metrics (per project or all): requests, errors (5xx), client_errors (4xx), error_rate, latency_avg, latency_p50, latency_p95, latency_p99, bytes_out, cache_hit_rate. Resource metrics (need "resource" from joytree_observability_resources): cpu, mem_pct, mem_bytes, net_rx, net_tx.',
+    inputSchema: {
+      metric: z.enum(['requests', 'errors', 'client_errors', 'error_rate', 'latency_avg', 'latency_p50', 'latency_p95', 'latency_p99', 'bytes_out', 'cache_hit_rate', 'cpu', 'mem_pct', 'mem_bytes', 'net_rx', 'net_tx']),
+      range: obsRange,
+      project: obsProject.describe('Request metrics only: limit to one project (id or subdomain)'),
+      resource: z.string().optional().describe('Resource metrics only: the key from joytree_observability_resources, e.g. project:abc123 or database:def456'),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args, client) => textResult(await client.get(`/api/observability/series${qs({ metric: args.metric, range: args.range, project: args.project, resource: args.resource })}`)));
+
+  tool('joytree_observability_requests', {
+    title: 'Search recent requests',
+    description: 'Look at individual recent requests (method, path, status, latency, bytes, cache status, country), newest first by default. Use it to find the failing or slow requests behind an error spike. With groupBy set it instead aggregates the matching requests, e.g. groupBy "path" with metric "errors" shows which endpoints fail most. Only the most recent requests are kept in memory, so very old ranges may be truncated (the result says so).',
+    inputSchema: {
+      range: obsRange.describe('Time window (default 1h)'),
+      project: obsProject,
+      status: z.string().optional().describe('"5xx", "4xx", "error" (any 400+), or comma-separated codes like "404,500"'),
+      method: z.string().optional().describe('HTTP method, e.g. POST'),
+      path: z.string().optional().describe('Path filter'),
+      cache: z.enum(['HIT', 'MISS', 'BYPASS', 'DYNAMIC', 'REVALIDATED']).optional(),
+      country: z.string().optional().describe('Two-letter country code'),
+      minMs: z.number().int().min(0).optional().describe('Only requests slower than this many milliseconds'),
+      limit: z.number().int().min(1).max(200).optional().describe('Max rows / groups (default 50)'),
+      sort: z.enum(['time', 'duration', 'bytes']).optional().describe('Row mode only (default time)'),
+      groupBy: z.enum(['path', 'status', 'status_class', 'method', 'country', 'cache', 'project']).optional().describe('Aggregate instead of listing rows'),
+      metric: z.enum(['count', 'errors', 'error_rate', 'avg_ms', 'p95_ms', 'bytes']).optional().describe('With groupBy: what to rank groups by (default count)'),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args, client) => {
+    const filters = { range: args.range, project: args.project, status: args.status, method: args.method, path: args.path, cache: args.cache, country: args.country, minMs: args.minMs, limit: args.limit };
+    if (args.groupBy) return textResult(await client.get(`/api/observability/query${qs({ ...filters, groupBy: args.groupBy, metric: args.metric })}`));
+    return textResult(await client.get(`/api/observability/requests${qs({ ...filters, sort: args.sort })}`));
+  });
+
+  tool('joytree_observability_cache', {
+    title: 'CDN cache performance',
+    description: 'Cache hit/miss/bypass totals and edge-cache stats over a range, plus the static assets that miss the cache most often (good candidates to fix).',
+    inputSchema: { range: obsRange, project: obsProject },
+    annotations: { readOnlyHint: true },
+  }, async (args, client) => textResult(await client.get(`/api/observability/cache${qs({ range: args.range, project: args.project })}`)));
+
+  tool('joytree_observability_alerts', {
+    title: 'Alert rules and alert history',
+    description: 'List the configured alert rules with their current state (ok / firing) and the recent history of alerts that fired or resolved.',
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  }, async (_args, client) => textResult(await client.get('/api/observability/alerts')));
+
+  tool('joytree_observability_alert_rule', {
+    title: 'Create, update or delete an alert rule',
+    description: 'Manage alert rules. "create" needs name, metric and threshold; "update" needs ruleId plus the FULL rule (it replaces the old one); "delete" needs ruleId. A rule fires when the metric is above (">") or below ("<") the threshold over windowMinutes. Metric "down" alerts when a project or database is not running (threshold is ignored). Target is "all", "project:<id>" or "database:<id>" (ids from joytree_observability_resources). An optional https webhookUrl is called when the alert fires and resolves.',
+    inputSchema: {
+      action: z.enum(['create', 'update', 'delete']),
+      ruleId: z.string().optional().describe('Required for update and delete (from joytree_observability_alerts)'),
+      name: z.string().optional(),
+      metric: z.enum(['down', 'requests', 'errors', 'client_errors', 'error_rate', 'latency_avg', 'latency_p50', 'latency_p95', 'latency_p99', 'bytes_out', 'cache_hit_rate', 'cpu', 'mem_pct', 'mem_bytes', 'net_rx', 'net_tx']).optional(),
+      op: z.enum(['>', '<']).optional().describe('Default >'),
+      threshold: z.number().optional().describe('In the metric\'s unit: % for rates/CPU, ms for latency, bytes for sizes'),
+      windowMinutes: z.number().int().min(1).max(60).optional().describe('Evaluation window (default 5)'),
+      severity: z.enum(['warning', 'critical']).optional(),
+      target: z.string().optional().describe('all | project:<id> | database:<id> (default all)'),
+      webhookUrl: z.string().optional().describe('https:// URL to notify'),
+      enabled: z.boolean().optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  }, async (args, client) => {
+    if (args.action === 'delete') {
+      if (!args.ruleId) throw new Error('ruleId is required for action "delete".');
+      return textResult(await client.del(`/api/observability/rules/${enc(args.ruleId)}`));
+    }
+    const rule = { name: args.name, metric: args.metric, op: args.op, threshold: args.threshold, windowMinutes: args.windowMinutes, severity: args.severity, target: args.target, webhookUrl: args.webhookUrl, enabled: args.enabled };
+    if (args.action === 'update') {
+      if (!args.ruleId) throw new Error('ruleId is required for action "update".');
+      return textResult(await client.put(`/api/observability/rules/${enc(args.ruleId)}`, rule));
+    }
+    if (!args.name || !args.metric) throw new Error('name and metric are required for action "create".');
+    if (args.metric !== 'down' && args.threshold === undefined) throw new Error('threshold is required unless metric is "down".');
+    return textResult(await client.post('/api/observability/rules', rule));
+  });
+
+  tool('joytree_project_metrics', {
+    title: 'Live project container metrics',
+    description: 'Current container status and resource usage (CPU, memory, network) for one project right now. Returns status "no_container" if the project is not running. For history over time use joytree_observability_series instead.',
+    inputSchema: { projectId: z.string().describe('Project ID or subdomain') },
+    annotations: { readOnlyHint: true },
+  }, async (args, client) => textResult(await client.get(`/api/projects/${enc(args.projectId)}/metrics`)));
+
+  // -- Rollback and CDN ------------------------------------------------
+  tool('joytree_rollback_deployment', {
+    title: 'Roll back to a previous deployment',
+    description: 'Redeploy the exact commit of an earlier successful deployment, e.g. to undo a bad release. deploymentId comes from joytree_list_deployments. Only successful builds that recorded a commit can be rolled back to, so GitHub-connected projects only (not zip uploads). This replaces the live version - confirm with the user first.',
+    inputSchema: { deploymentId: z.string().describe('The id of the earlier, successful deployment to restore') },
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  }, async (args, client) => textResult(await client.post(`/api/deployments/${enc(args.deploymentId)}/rollback`)));
+
+  tool('joytree_cdn', {
+    title: 'CDN status, toggle and cache purge',
+    description: 'Manage the CDN for a project. "status" shows whether it is on; "enable" / "disable" switch it; "purge" clears the cached copies of the site so visitors get fresh content right after a deploy.',
+    inputSchema: {
+      projectId: z.string().describe('Project ID, subdomain or name'),
+      action: z.enum(['status', 'enable', 'disable', 'purge']),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  }, async (args, client) => {
+    const base = `/api/projects/${enc(args.projectId)}/cdn`;
+    if (args.action === 'status') return textResult(await client.get(`${base}/status`));
+    if (args.action === 'purge') return textResult(await client.post(`${base}/purge`));
+    return textResult(await client.post(`${base}/toggle`, { enabled: args.action === 'enable' }));
+  });
+
+
   // ── GitHub helper ───────────────────────────────────────────────────
   tool('joytree_list_github_repos', {
     title: 'List connected GitHub repos',

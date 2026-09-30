@@ -20,16 +20,20 @@ processes.
 
 ## What it exposes
 
-23 tools covering the core "code with Claude, ship it" loop:
+48 tools covering the whole "code with Claude, ship it, keep it healthy" loop:
 
 - **Identity & projects** — `joytree_whoami`, `joytree_list_projects`, `joytree_get_project`, `joytree_delete_project`
-- **Deploy** — `joytree_deploy_from_github`, `joytree_list_deployments`, `joytree_runtime_logs`, `joytree_list_github_repos`
+- **Deploy** — `joytree_deploy_from_github`, `joytree_deploy_from_zip` (plus the chunked `joytree_zip_upload_start` / `_chunk` / `_finish` for large archives), `joytree_list_deployments`, `joytree_runtime_logs`, `joytree_rollback_deployment`, `joytree_list_github_repos`. Every deploy tool supports **Background Workers** (`isWorker`), **Dockerfile builds** (`isDockerfileDeploy`, `dockerfilePath`, `exposedPort`, `dockerCommand`), `preDeployCommand`, `workingDir` for monorepos, explicit `runtime` with per-language version pins, `envVars`, and include/ignore path filters. Anything left out is auto-detected.
+- **Blueprints** — `joytree_blueprint_plan`, `joytree_blueprint_deploy`, `joytree_blueprint_browse`: preview and deploy a whole multi-service stack (web, worker, static and Dockerfile services plus databases) described by a `joytree.joy` file.
+- **Firewall** (Pro plan and above) — `joytree_firewall_get`, `joytree_firewall_rule`, `joytree_firewall_ip_list`, `joytree_firewall_settings`, `joytree_firewall_attack_mode`, `joytree_firewall_simulate`, `joytree_firewall_activity`: custom rules, IP block/bypass lists, bot management, DDoS protection, the managed OWASP ruleset, Attack Mode, plus analytics, events and insights.
+- **Observability** — `joytree_observability_summary`, `_resources`, `_series`, `_requests`, `_cache`, `_alerts`, `_alert_rule`, and `joytree_project_metrics`: traffic, latency, error rates, CPU/memory, request search, cache performance and alert rules.
+- **CDN** — `joytree_cdn`: status, enable/disable and cache purge.
 - **Environment variables** — `joytree_env_list`, `joytree_env_set`, `joytree_env_delete`
-- **Databases** — `joytree_list_databases`, `joytree_create_database`, `joytree_get_database`, `joytree_database_lifecycle`
+- **Databases** — `joytree_list_databases`, `joytree_create_database`, `joytree_get_database`, `joytree_database_lifecycle`, `joytree_compare_databases`
 - **Data Migration** — `joytree_start_migration`, `joytree_list_migrations`, `joytree_get_migration`, `joytree_delete_migration`, `joytree_clear_migration_history`
 - **Realtime API Builder** — `joytree_create_api_from_prompt`, `joytree_list_generated_apis`, `joytree_dockerize_api`
 
-Most read/lookup tools call JoyTree's versioned `/api/v1/*` surface rather
+The firewall, observability, blueprint, rollback and CDN tools call the dashboard `/api/*` routes directly (the same personal `jtk_` key is accepted there); most read/lookup tools call JoyTree's versioned `/api/v1/*` surface rather
 than the older internal `/api/*` routes — the v1 API resolves projects by
 either id *or* subdomain and doesn't throw on non-ObjectId project ids
 (most projects here use custom string ids, not real Mongo ObjectIds),
@@ -90,9 +94,11 @@ npm test
 
 This starts the server and runs `test/protocol-check.js` against it — a
 real MCP client that checks: an invalid/missing key is cleanly rejected,
-a valid handshake correctly lists all 23 tools, and an actual tool call
+a valid handshake correctly lists all 48 tools, and an actual tool call
 makes it through the full pipeline (parse → auth → dispatch → real HTTP
 call → clean error/result), not just that the server boots.
+
+`node test/tools-check.js` is a fast offline check (no network, no key) that every tool maps to the right JoyTree endpoint and request body.
 
 `test/oauth-flow-check.js` separately exercises the OAuth side: dynamic
 client registration, the `/authorize` page rendering, and
