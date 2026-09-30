@@ -470,6 +470,54 @@ function registerJoyTreeTools(server, getClient) {
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => textResult(await client.post(`/api/developer/flows/${encodeURIComponent(args.flowId)}/dockerize`)));
 
+  // -- Blueprints (joytree.joy): multi-service stacks ------------------
+  const blueprintSourceShape = {
+    repoUrl: z.string().optional().describe('GitHub repository URL that contains the blueprint file (joytree.joy at the repo root unless blueprintPath is set)'),
+    branch: z.string().optional().describe('Branch to read the blueprint from (default: main)'),
+    blueprintPath: z.string().optional().describe('Repo-relative path to the blueprint file if it is not joytree.joy at the repo root'),
+    uploadProjectId: z.string().optional().describe('Use an already-uploaded project archive instead of a GitHub repo (the id returned by an upload)'),
+  };
+  const blueprintBody = (args) => {
+    if (!args.repoUrl && !args.uploadProjectId) throw new Error('Provide repoUrl (a GitHub repo containing joytree.joy) or uploadProjectId.');
+    return { repoUrl: args.repoUrl, branch: args.branch, blueprintPath: args.blueprintPath, uploadProjectId: args.uploadProjectId };
+  };
+
+  tool('joytree_blueprint_plan', {
+    title: 'Preview a Blueprint (joytree.joy)',
+    description: 'Read and validate a joytree.joy Blueprint and return the plan WITHOUT creating anything: the services (web, worker, static, Dockerfile builds), the databases they need, whether each name/subdomain is free, required environment variables that still need values, and any warnings or errors. Always call this before joytree_blueprint_deploy, show the plan to the user, and collect any missing env values.',
+    inputSchema: blueprintSourceShape,
+    annotations: { readOnlyHint: true },
+  }, async (args, client) => textResult(await client.post('/api/blueprints/plan', blueprintBody(args))));
+
+  tool('joytree_blueprint_deploy', {
+    title: 'Deploy a Blueprint (joytree.joy)',
+    description: 'Deploy every service and database described by a joytree.joy Blueprint in one go, in the right order, wiring database connection details into the services that need them. This creates multiple resources that can use plan quota, so run joytree_blueprint_plan first and get the user\'s confirmation. If the plan lists required env vars without values, supply them in envOverrides or the call is rejected. Returns the created resources and any warnings.',
+    inputSchema: {
+      ...blueprintSourceShape,
+      envOverrides: z.record(z.record(z.string())).optional().describe('Per-service environment variable values, keyed by service name, e.g. { "api": { "STRIPE_KEY": "sk_..." } }'),
+      serviceNameOverrides: z.record(z.string()).optional().describe('Rename services on deploy when the plan shows a name is taken: { "blueprintName": "newName" }'),
+      databaseNameOverrides: z.record(z.string()).optional().describe('Rename databases on deploy when the plan shows a name is taken: { "blueprintName": "newName" }'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  }, async (args, client) => textResult(await client.post('/api/blueprints/deploy', {
+    ...blueprintBody(args),
+    envOverrides: args.envOverrides,
+    serviceNameOverrides: args.serviceNameOverrides,
+    databaseNameOverrides: args.databaseNameOverrides,
+  })));
+
+  tool('joytree_blueprint_browse', {
+    title: 'Browse a repo directory (find a Blueprint)',
+    description: 'List the files and folders in a directory of a GitHub repo, to locate a joytree.joy Blueprint that is not at the repo root before calling joytree_blueprint_plan with its blueprintPath.',
+    inputSchema: {
+      repoUrl: z.string().describe('GitHub repository URL'),
+      branch: z.string().optional().describe('Branch (default: main)'),
+      dir: z.string().optional().describe('Repo-relative directory to list (default: the repo root)'),
+    },
+    annotations: { readOnlyHint: true },
+  }, async (args, client) => textResult(await client.post('/api/blueprints/browse', { repoUrl: args.repoUrl, branch: args.branch, dir: args.dir })));
+
+
   // ── GitHub helper ───────────────────────────────────────────────────
   tool('joytree_list_github_repos', {
     title: 'List connected GitHub repos',
