@@ -14,6 +14,50 @@ function errorResult(err) {
   };
 }
 
+// Extra deploy options supported by the JoyTree server (Background Workers,
+// Dockerfile deploys, runtime/version pins, ...). Shared by every tool that
+// starts a deploy so they all accept the same set. Only fields the caller
+// actually set are forwarded, so server-side defaults and auto-detection
+// still apply to everything left out.
+const deployOptionsShape = {
+  runtime: z.string().optional().describe('Explicit runtime, e.g. node, python, django, go, php, laravel, ruby, java, dotnet, rust, elixir, bun, deno. Leave blank to auto-detect from the repo.'),
+  workingDir: z.string().optional().describe('Sub-directory to build and run from (monorepos), e.g. apps/api'),
+  isWorker: z.boolean().optional().describe('Deploy as a Background Worker: a long-running process with no public HTTP port (queue consumers, bots, schedulers). Requires startCmd.'),
+  isDockerfileDeploy: z.boolean().optional().describe('Build from a Dockerfile in the repo instead of auto-detecting the framework. Implied when dockerfilePath is set.'),
+  dockerfilePath: z.string().optional().describe('Repo-relative path to the Dockerfile (default: Dockerfile), e.g. worker/Dockerfile'),
+  dockerCommand: z.string().optional().describe('Override the Dockerfile CMD when using a Dockerfile deploy'),
+  exposedPort: z.number().int().min(1).max(65535).optional().describe('Port the app listens on inside the container (default 3000). Mainly for Dockerfile deploys.'),
+  preDeployCommand: z.string().optional().describe('Command run once after a successful build and before the new version goes live, e.g. a database migration'),
+  pythonVer: z.string().optional().describe('Python version pin, e.g. "3.12"'),
+  goVer: z.string().optional().describe('Go version pin, e.g. "1.22"'),
+  phpVer: z.string().optional().describe('PHP version pin, e.g. "8.3"'),
+  rubyVer: z.string().optional().describe('Ruby version pin, e.g. "3.3"'),
+  javaVer: z.string().optional().describe('Java version pin, e.g. "21"'),
+  dotnetVer: z.string().optional().describe('.NET version pin, e.g. "8.0"'),
+  envVars: z.record(z.string()).optional().describe('Environment variables to set on the project at deploy time, e.g. { "DATABASE_URL": "postgres://..." }'),
+  includedPaths: z.array(z.string()).optional().describe('Only deploy when changes touch these paths (monorepo build filter)'),
+  ignoredPaths: z.array(z.string()).optional().describe('Skip deploys for changes that only touch these paths'),
+};
+
+function pickDeployOptions(args) {
+  const out = {};
+  for (const key of Object.keys(deployOptionsShape)) {
+    if (args[key] !== undefined) out[key] = args[key];
+  }
+  return out;
+}
+
+function qs(params) {
+  const parts = [];
+  for (const [k, v] of Object.entries(params || {})) {
+    if (v === undefined || v === null || v === '') continue;
+    parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
+  }
+  return parts.length ? `?${parts.join('&')}` : '';
+}
+
+const enc = encodeURIComponent;
+
 /**
  * Registers every JoyTree tool on the given McpServer instance.
  * `getClient(extra)` must return a ready JoyTreeClient for the current
@@ -63,7 +107,7 @@ function registerJoyTreeTools(server, getClient) {
 
   tool('joytree_deploy_from_github', {
     title: 'Deploy a GitHub repo',
-    description: 'Deploy a project straight from a GitHub repository. This is the main "ship it" tool — call this once code is pushed and ready to go live. Framework/build settings are auto-detected if omitted. If there is no repo to push to (e.g. a project generated locally with no git remote), use joytree_deploy_from_zip instead.',
+    description: 'Deploy a project straight from a GitHub repository. This is the main "ship it" tool — call this once code is pushed and ready to go live. Framework/build settings are auto-detected if omitted. If there is no repo to push to (e.g. a project generated locally with no git remote), use joytree_deploy_from_zip instead. For a Background Worker set isWorker with a startCmd; for a Dockerfile build set isDockerfileDeploy (or dockerfilePath) and exposedPort; for a multi-service stack described by a joytree.joy file use joytree_blueprint_plan then joytree_blueprint_deploy instead.',
     inputSchema: {
       name: z.string().describe('Project name — also becomes the <name>.joytree.site subdomain unless a custom subdomain is given'),
       repoUrl: z.string().describe('GitHub repository URL, e.g. https://github.com/you/my-app'),
@@ -73,9 +117,15 @@ function registerJoyTreeTools(server, getClient) {
       startCmd: z.string().optional().describe('Override the auto-detected start command (server apps only)'),
       outputDir: z.string().optional().describe('Override the auto-detected output directory'),
       siteType: z.enum(['static', 'server']).optional().describe('Force static vs. server app instead of auto-detecting'),
+      installCmd: z.string().optional().describe('Override the auto-detected install command'),
+      nodeVer: z.string().optional().describe('Node.js version, e.g. "20"'),
+      ...deployOptionsShape,
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => textResult(await client.post('/api/v1/deploy', {
+    ...pickDeployOptions(args),
+    installCmd: args.installCmd,
+    nodeVer: args.nodeVer,
     name: args.name,
     subdomain: args.subdomain || args.name,
     repoUrl: args.repoUrl,
@@ -100,9 +150,11 @@ function registerJoyTreeTools(server, getClient) {
       outputDir: z.string().optional().describe('Override the auto-detected output directory (static sites only)'),
       siteType: z.enum(['static', 'server']).optional().describe('Force static vs. server app instead of auto-detecting'),
       nodeVer: z.string().optional().describe('Node.js version, e.g. "20" (default: 20, or whatever package.json engines specifies)'),
+      ...deployOptionsShape,
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => textResult(await client.post('/api/v1/deploy-from-zip', {
+    ...pickDeployOptions(args),
     name: args.name,
     subdomain: args.subdomain || args.name,
     zipUrl: args.zipUrl,
@@ -168,9 +220,11 @@ function registerJoyTreeTools(server, getClient) {
       outputDir: z.string().optional().describe('Override the auto-detected output directory (static sites only)'),
       siteType: z.enum(['static', 'server']).optional().describe('Force static vs. server app instead of auto-detecting'),
       nodeVer: z.string().optional().describe('Node.js version, e.g. "20" (default: 20, or whatever package.json engines specifies)'),
+      ...deployOptionsShape,
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async (args, client) => textResult(await client.post(`/api/v1/zip-uploads/${encodeURIComponent(args.uploadId)}/finish`, {
+    ...pickDeployOptions(args),
     name: args.name,
     subdomain: args.subdomain || args.name,
     buildCmd: args.buildCmd,
