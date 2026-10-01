@@ -54,24 +54,29 @@ class JoyTreeOAuthProvider {
     res.status(200).set('Content-Type', 'text/html').send(`<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Connect JoyTree</title>
 <style>
+  *{box-sizing:border-box;border-radius:0;}
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#09090b;color:#e2e8f0;
        display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;}
-  .card{max-width:420px;width:100%;background:#111113;border:1px solid rgba(16,185,129,.18);border-radius:14px;padding:32px;}
-  h1{font-size:1.3rem;margin:0 0 8px;}
-  p{color:#94a3b8;font-size:.92rem;line-height:1.5;}
-  input[type=password]{width:100%;box-sizing:border-box;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
-       background:#09090b;color:#e2e8f0;font-size:1rem;margin:16px 0;}
-  button{width:100%;padding:13px;border-radius:8px;border:none;background:#10b981;color:#052e22;font-weight:700;
-       font-size:1rem;cursor:pointer;}
+  .wrap{max-width:420px;width:100%;}
+  .row{border-top:1px solid rgba(255,255,255,.18);padding:24px 0;}
+  .row:last-child{border-bottom:1px solid rgba(255,255,255,.18);}
+  h1{font-size:1.3rem;font-weight:700;margin:0;}
+  p{color:#94a3b8;font-size:.92rem;line-height:1.5;margin:0;}
+  code{font-family:ui-monospace,Menlo,Consolas,monospace;}
+  input[type=password]{display:block;width:100%;padding:12px 0;border:none;border-bottom:2px solid #10b981;
+       background:transparent;color:#e2e8f0;font-size:1.05rem;outline:none;-webkit-appearance:none;appearance:none;}
+  input[type=password]::placeholder{color:#64748b;}
+  button{display:block;width:100%;margin-top:24px;padding:14px;border:none;background:#10b981;color:#052e22;
+       font-weight:700;font-size:1rem;cursor:pointer;}
   a{color:#6ee7b7;}
 </style></head>
 <body>
-  <div class="card">
-    <h1>Connect JoyTree to Claude</h1>
-    <p>Paste your JoyTree API key to finish connecting. Find it at
+  <div class="wrap">
+    <div class="row"><h1>Connect JoyTree to Claude</h1></div>
+    <div class="row"><p>Paste your JoyTree API key to finish connecting. Find it at
        <a href="${BASE_URL}/dashboard/account" target="_blank">joytree.site/dashboard/account</a>,
-       or run <code>joytree apikey show</code>.</p>
-    <form method="POST" action="/authorize/submit">
+       or run <code>joytree apikey show</code>.</p></div>
+    <form class="row" method="POST" action="/authorize/submit">
       ${hidden('client_id', client.client_id)}
       ${hidden('state', params.state)}
       ${hidden('code_challenge', params.codeChallenge)}
