@@ -614,7 +614,9 @@ function registerJoyTreeTools(server, getClient) {
     if (!ids || !ids.length) {
       if (!args.ips || !args.ips.length) throw new Error('Provide ids or ips to remove.');
       const cfg = await client.get(base);
-      const entries = (args.list === 'block' ? cfg.ipBlocks : cfg.bypass) || [];
+      // The firewall endpoint nests the settings under `config`.
+      const settings = (cfg && cfg.config) || cfg || {};
+      const entries = (args.list === 'block' ? settings.ipBlocks : settings.bypass) || [];
       const wanted = new Set(args.ips.map(x => String(x).trim()));
       ids = entries.filter(e => wanted.has(e.ip)).map(e => e.id);
       if (!ids.length) throw new Error('None of those addresses are on the ' + args.list + ' list.');

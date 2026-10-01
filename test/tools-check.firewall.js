@@ -38,7 +38,8 @@ test('firewall_ip_list removes by IP by resolving entry ids first', async () => 
   const { handlers, useClient } = require('./tools-check');
   const seen = [];
   const client = {
-    get: async (p) => { seen.push(['GET', p]); return { ipBlocks: [{ id: 'e1', ip: '1.2.3.4' }, { id: 'e2', ip: '5.6.7.8' }] }; },
+    // Real response shape: settings live under `config`.
+    get: async (p) => { seen.push(['GET', p]); return { ok: true, config: { ipBlocks: [{ id: 'e1', ip: '1.2.3.4' }, { id: 'e2', ip: '5.6.7.8' }], bypass: [] } }; },
     post: async (p, b) => { seen.push(['POST', p, b]); return { ok: true }; },
   };
   useClient(client);
