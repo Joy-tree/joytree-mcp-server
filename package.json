@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node src/server.js & sleep 1; node test/protocol-check.js; kill %1"
+    "test": "node src/server.js & sleep 1; node test/protocol-check.js; node test/guide-check.js; kill %1"
   },
   "license": "MIT",
   "engines": { "node": ">=20.0.0" },

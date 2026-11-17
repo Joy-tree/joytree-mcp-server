@@ -43,6 +43,15 @@ on the original `/api/projects/:id` endpoint, since that one does full
 cleanup (site files, container, DNS route) where v1's delete only removes
 the workspace record.
 
+## Setup guide
+
+A visual, step-by-step guide for connecting JoyTree to Claude (annotated
+screenshots, permission modes, troubleshooting) is served by the server itself
+at **`/guide`** (e.g. `https://mcp.joytree.site/guide`). It is a static page:
+`src/guide.html`, with screenshots in `src/assets/guide/` served from
+`/guide/assets/*`. The OAuth Connect page links to it, and
+`test/guide-check.js` verifies the page, its images and its markers.
+
 ## Auth
 
 Two ways to authenticate, both supported at once:

@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Setup guide — JoyTree MCP Server</title>
+<meta name="description" content="Connect JoyTree to Claude in two minutes: add the connector, sign in once, and choose exactly what Claude may do on its own. Step-by-step with screenshots.">
+<meta name="theme-color" content="#09090b">
+<style>
+:root{--bg:#09090b;--bg2:#0e0e11;--fg:#e2e8f0;--mute:#94a3b8;--dim:#64748b;--line:rgba(255,255,255,.14);--line2:rgba(255,255,255,.08);--g:#10b981;--g2:#6ee7b7;--warn:#f59e0b}
+*{box-sizing:border-box;border-radius:0;margin:0}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:84px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--fg);line-height:1.6;
+  background-image:radial-gradient(60rem 26rem at 50% -8rem,rgba(16,185,129,.12),transparent 70%);background-repeat:no-repeat}
+a{color:var(--g2);text-underline-offset:3px}
+a:hover{color:#fff}
+code,.mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+code{font-size:.86em;color:var(--g2);background:rgba(16,185,129,.08);padding:1px 6px}
+strong{color:#fff;font-weight:650}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+
+/* top bar */
+.top{position:sticky;top:0;z-index:30;background:rgba(9,9,11,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;justify-content:space-between;align-items:center;height:56px}
+.brand{font-weight:800;letter-spacing:.01em;color:#fff;text-decoration:none}
+.brand span{font-weight:500;font-size:.74rem;letter-spacing:.16em;color:var(--g2);text-transform:uppercase;margin-left:12px}
+.top nav a{font-size:.84rem;color:var(--mute);text-decoration:none;margin-left:22px}
+.top nav a:hover{color:#fff}
+.bar{position:absolute;left:0;bottom:-1px;height:2px;width:0;background:var(--g)}
+
+/* hero */
+.hero{padding:72px 0 44px}
+.eyebrow{font-size:.74rem;letter-spacing:.18em;text-transform:uppercase;color:var(--g2);margin-bottom:18px}
+h1{font-size:clamp(2.2rem,7vw,3.9rem);line-height:1.05;font-weight:800;letter-spacing:-.03em;max-width:18ch}
+h1 em{font-style:normal;color:var(--g)}
+.lede{color:var(--mute);font-size:1.1rem;max-width:56ch;margin-top:22px}
+.meta{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:44px}
+.meta div{padding:18px 0 18px 16px;border-left:1px solid var(--line)}
+.meta div:first-child{border-left:none;padding-left:0}
+.meta b{display:block;font-size:clamp(1.15rem,4.4vw,1.9rem);letter-spacing:-.02em;white-space:nowrap}
+.meta span{font-size:.78rem;color:var(--mute)}
+
+/* layout */
+.doc{display:block;padding-bottom:40px}
+aside{display:none}
+@media(min-width:1000px){
+  .doc{display:grid;grid-template-columns:210px minmax(0,1fr);gap:64px}
+  aside{display:block}
+  aside .stick{position:sticky;top:96px;padding-top:44px}
+  aside small{display:block;font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);margin-bottom:14px}
+  aside a{display:block;padding:7px 0 7px 14px;border-left:1px solid var(--line);color:var(--mute);font-size:.88rem;text-decoration:none}
+  aside a:hover{color:#fff}
+  aside a.on{color:var(--g2);border-left:2px solid var(--g);padding-left:13px}
+}
+main{max-width:780px;min-width:0}
+
+/* sections */
+section.s{padding:52px 0 8px;border-top:1px solid var(--line);margin-top:20px}
+section.s:first-child{border-top:none;margin-top:0}
+.sh{display:flex;align-items:baseline;gap:16px;margin-bottom:14px}
+.sh .n{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:var(--g);font-size:.95rem;letter-spacing:.04em}
+h2{font-size:clamp(1.5rem,4.6vw,2rem);letter-spacing:-.02em;line-height:1.15}
+h3{font-size:1.05rem;margin:28px 0 8px;letter-spacing:-.005em}
+p{color:var(--mute);margin:12px 0;max-width:68ch}
+ul.plain,ol.plain{margin:12px 0 12px 20px;color:var(--mute)}
+ul.plain li,ol.plain li{margin:6px 0;padding-left:4px}
+ul.plain li::marker,ol.plain li::marker{color:var(--g)}
+
+/* copy field */
+.field{display:flex;align-items:stretch;border:1px solid var(--line);background:var(--bg2);margin:16px 0;max-width:620px}
+.field .k{display:none}
+.field code{flex:1;background:none;color:var(--fg);font-size:.95rem;padding:13px 16px;overflow-x:auto;white-space:nowrap}
+.field button,.chip button{border:none;border-left:1px solid var(--line);background:transparent;color:var(--g2);font:inherit;font-size:.8rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:0 16px;cursor:pointer;width:auto;margin:0}
+.field button:hover,.chip button:hover{background:var(--g);color:#052e22}
+.field button.done,.chip button.done{background:var(--g);color:#052e22}
+
+/* spec table */
+.spec{width:100%;border-collapse:collapse;margin:18px 0;font-size:.93rem}
+.spec th{font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600;text-align:left;padding:10px 12px 10px 0;border-bottom:1px solid var(--line)}
+.spec td{padding:14px 12px 14px 0;border-bottom:1px solid var(--line2);vertical-align:top;color:var(--mute)}
+.spec td:first-child{color:#fff;font-weight:650;white-space:nowrap;padding-right:20px}
+.tag{display:inline-block;font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:2px 8px;border:1px solid var(--g);color:var(--g2);margin-left:8px;vertical-align:middle}
+.tag.w{border-color:var(--warn);color:var(--warn)}
+.tag.r{border-color:#f87171;color:#f87171}
+.scroll{overflow-x:auto}
+
+/* callouts */
+.note,.warn{margin:22px 0;padding:14px 18px;border-left:2px solid var(--g);background:rgba(16,185,129,.06);max-width:68ch}
+.warn{border-left-color:var(--warn);background:rgba(245,158,11,.07)}
+.note b,.warn b{display:block;font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--g2);margin-bottom:4px}
+.warn b{color:var(--warn)}
+.note p,.warn p{margin:0;color:var(--fg);font-size:.94rem}
+
+/* figures */
+figure{margin:26px 0 8px}
+.frame{border:1px solid var(--line);background:var(--bg2)}
+.cap{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.cap i{font-style:normal;color:var(--mute)}
+.cap button{all:unset;cursor:zoom-in;color:var(--g2);font-weight:700}
+.cap button:hover{color:#fff}
+.stage{position:relative;line-height:0;cursor:zoom-in;background:#fff}
+.stage img{display:block;width:100%;height:auto}
+.pin{position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;display:grid;place-items:center;background:var(--g);color:#052e22;
+  font:800 .8rem/1 -apple-system,'Segoe UI',sans-serif;box-shadow:0 0 0 4px rgba(16,185,129,.3),0 4px 14px rgba(0,0,0,.35);font-style:normal;animation:pulse 2.4s ease-out infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(16,185,129,.55),0 4px 14px rgba(0,0,0,.35)}70%{box-shadow:0 0 0 10px rgba(16,185,129,0),0 4px 14px rgba(0,0,0,.35)}100%{box-shadow:0 0 0 0 rgba(16,185,129,0),0 4px 14px rgba(0,0,0,.35)}}
+@media(prefers-reduced-motion:reduce){.pin{animation:none}html{scroll-behavior:auto}}
+.legend{list-style:none;counter-reset:l;margin:0;border:1px solid var(--line);border-top:none}
+.legend li{counter-increment:l;display:grid;grid-template-columns:46px 1fr;border-top:1px solid var(--line2);color:var(--mute);font-size:.9rem}
+.legend li:first-child{border-top:none}
+.legend li::before{content:counter(l);display:grid;place-items:center;color:var(--g2);font-weight:800;border-right:1px solid var(--line2);background:rgba(16,185,129,.05)}
+.legend li span{padding:11px 14px}
+.legend li b{color:#fff}
+.pair{display:grid;gap:8px}
+
+/* prompts */
+.chips{display:grid;gap:0;margin:18px 0;border-top:1px solid var(--line)}
+.chip{display:grid;grid-template-columns:1fr auto;border-bottom:1px solid var(--line)}
+.chip div{padding:14px 16px 14px 0}
+.chip q{display:block;color:#fff;quotes:none;font-size:.98rem}
+.chip small{display:block;margin-top:3px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.74rem;color:var(--g2)}
+.chip button{border-left:1px solid var(--line);min-width:84px}
+
+/* accordion */
+details{border-top:1px solid var(--line)}
+details:last-of-type{border-bottom:1px solid var(--line)}
+summary{list-style:none;cursor:pointer;padding:17px 36px 17px 0;color:#fff;font-weight:650;position:relative}
+summary::-webkit-details-marker{display:none}
+summary::after{content:'+';position:absolute;right:4px;top:50%;transform:translateY(-50%);color:var(--g);font-size:1.4rem;font-weight:400}
+details[open] summary::after{content:'\2212'}
+details p,details ul{margin-top:0;padding-bottom:6px}
+details>div{padding:0 0 18px}
+
+/* flow */
+.flow{display:grid;grid-template-columns:1fr;border:1px solid var(--line);margin:22px 0}
+.flow div{padding:16px 18px;border-top:1px solid var(--line)}
+.flow div:first-child{border-top:none}
+.flow b{display:block;color:#fff}
+.flow span{color:var(--mute);font-size:.9rem}
+@media(min-width:720px){.flow{grid-template-columns:repeat(3,1fr)}.flow div{border-top:none;border-left:1px solid var(--line)}.flow div:first-child{border-left:none}}
+
+.cta{margin:56px 0 0;border:1px solid var(--line);padding:30px 26px;background:linear-gradient(180deg,rgba(16,185,129,.09),transparent)}
+.cta h2{font-size:1.5rem}
+.cta p{color:var(--mute)}
+.btn{display:inline-block;margin-top:10px;padding:14px 22px;background:var(--g);color:#052e22;font-weight:800;text-decoration:none;letter-spacing:.01em}
+.btn:hover{background:var(--g2);color:#052e22}
+.btn.ghost{background:transparent;color:var(--g2);border:1px solid var(--line);margin-left:10px}
+.btn.ghost:hover{background:var(--line2);color:#fff}
+.foot{border-top:1px solid var(--line);margin-top:64px;padding:26px 0 44px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;font-size:.8rem;color:var(--dim)}
+
+dialog{border:1px solid var(--line);background:var(--bg);padding:0;max-width:min(96vw,1180px);width:100%;color:var(--fg)}
+dialog::backdrop{background:rgba(0,0,0,.82)}
+dialog .cap{cursor:default}
+dialog .cap button{cursor:pointer}
+dialog .stage{cursor:zoom-out}
+@media(max-width:560px){
+  .spec td:first-child{white-space:normal}
+  .legend li{grid-template-columns:38px 1fr}
+  .btn.ghost{margin:10px 0 0}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top">JoyTree<span>MCP Server</span></a>
+    <nav><a href="/privacy">Privacy</a><a href="https://joytree.site" target="_blank" rel="noopener">joytree.site</a></nav>
+  </div>
+  <div class="bar" id="bar"></div>
+</header>
+
+<div class="wrap" id="top">
+  <div class="hero">
+    <div class="eyebrow">Setup guide</div>
+    <h1>Connect JoyTree to Claude in <em>two minutes.</em></h1>
+    <p class="lede">A step-by-step walkthrough using the real screens: add the connector, sign in once, then decide exactly what Claude may do on its own and what it must ask you about first.</p>
+    <div class="meta">
+      <div><b>~2 min</b><span>to connect</span></div>
+      <div><b>5 steps</b><span>start to finish</span></div>
+      <div><b>0 installs</b><span>runs in the cloud</span></div>
+    </div>
+  </div>
+
+  <div class="doc">
+    <aside><div class="stick">
+      <small>On this page</small>
+      <a href="#short">The short version</a>
+      <a href="#before">Before you start</a>
+      <a href="#s1">1 &middot; Open Plugins</a>
+      <a href="#s2">2 &middot; Add the connector</a>
+      <a href="#s3">3 &middot; Confirm it works</a>
+      <a href="#s4">4 &middot; Set permissions</a>
+      <a href="#s5">5 &middot; Manage the connector</a>
+      <a href="#try">Try it</a>
+      <a href="#help">Troubleshooting</a>
+      <a href="#security">Security</a>
+    </div></aside>
+
+    <main>
+
+      <section class="s" id="short">
+        <div class="sh"><span class="n">TL;DR</span><h2>The short version</h2></div>
+        <p>In Claude, open <strong>Plugins</strong>, choose <strong>Add</strong> and add a custom connector with this address:</p>
+        <div class="field"><code>https://mcp.joytree.site/mcp</code><button type="button" data-copy="https://mcp.joytree.site/mcp">Copy</button></div>
+        <p>Sign in with your JoyTree API key when asked, then check that the status reads <strong>Connected</strong>. That&rsquo;s it. Everything below explains each screen and how to keep Claude on a short leash.</p>
+        <div class="flow">
+          <div><b>01 Add</b><span>Paste the address into Claude&rsquo;s Plugins page.</span></div>
+          <div><b>02 Sign in</b><span>Paste your <code>jtk_</code> key once.</span></div>
+          <div><b>03 Ask</b><span>&ldquo;Deploy my repo and show me the logs.&rdquo;</span></div>
+        </div>
+      </section>
+
+      <section class="s" id="before">
+        <div class="sh"><span class="n">00</span><h2>Before you start</h2></div>
+        <ul class="plain">
+          <li><strong>A JoyTree account and API key.</strong> Find your key at <a href="https://joytree.site/dashboard/account" target="_blank" rel="noopener">joytree.site/dashboard/account</a>, or run <code>joytree apikey show</code>. It starts with <code>jtk_</code>.</li>
+          <li><strong>A Claude account</strong> with access to the <strong>Plugins</strong> page, where connectors are managed.</li>
+        </ul>
+        <div class="note"><b>Using Cursor, ChatGPT or Lovable?</b><p>The same server address works in any MCP-compatible client. The screens below are Claude&rsquo;s, but the steps are the same idea: add a remote MCP server, sign in with your key.</p></div>
+      </section>
+
+      <!-- STEP 1 -->
+      <section class="s" id="s1">
+        <div class="sh"><span class="n">STEP 01</span><h2>Open Plugins</h2></div>
+        <p>In Claude, choose <strong>Plugins</strong> in the left sidebar. This is the home of every connector, from Google Drive to your own custom ones. Press <strong>Add</strong> in the top-right corner to start a new connector.</p>
+        <figure>
+          <div class="frame">
+            <div class="cap"><span>Claude <i>/</i> Plugins</span><button type="button" class="zoom">Enlarge</button></div>
+            <div class="stage">
+              <img src="/guide/assets/01-plugins.webp" width="1077" height="636" loading="lazy" alt="Claude's Plugins page showing the Add button and JOYTREE listed under Your plugins as a custom connector at mcp.joytree.site">
+              <i class="pin" style="left:97.2%;top:16.2%">1</i>
+              <i class="pin" style="left:2.4%;top:31.8%">2</i>
+            </div>
+          </div>
+          <ol class="legend">
+            <li><span><b>Add</b> &mdash; opens the menu for adding a connector. Choose the custom connector option.</span></li>
+            <li><span><b>Your plugins</b> &mdash; once connected, JoyTree appears here as a <em>Custom connector</em> on <code>mcp.joytree.site</code>.</span></li>
+          </ol>
+        </figure>
+      </section>
+
+      <!-- STEP 2 -->
+      <section class="s" id="s2">
+        <div class="sh"><span class="n">STEP 02</span><h2>Add the connector</h2></div>
+        <p>Fill in the custom connector form with the values below. Wording on Claude&rsquo;s side can differ slightly between plans and releases, but the two things that matter never change.</p>
+        <div class="scroll"><table class="spec">
+          <thead><tr><th>Field</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Name</td><td><code>JoyTree</code> (any label you like)</td></tr>
+            <tr><td>Server URL</td><td><code>https://mcp.joytree.site/mcp</code></td></tr>
+            <tr><td>Client ID / secret</td><td>Leave blank. Claude registers itself automatically (OAuth 2.1).</td></tr>
+          </tbody>
+        </table></div>
+        <p>Confirm, and Claude opens the <strong>Connect JoyTree</strong> page. Paste your API key and press <strong>Connect</strong>. You do this once.</p>
+        <div class="note"><b>Your key stays private</b><p>JoyTree verifies the key a single time, then swaps it for an opaque token. Claude never sees your raw key again.</p></div>
+      </section>
+
+      <!-- STEP 3 -->
+      <section class="s" id="s3">
+        <div class="sh"><span class="n">STEP 03</span><h2>Confirm it works</h2></div>
+        <p>Back in <strong>Plugins</strong>, JoyTree now sits under <em>Your plugins</em> with an <strong>Active</strong> status. Open it to see its detail page.</p>
+        <figure>
+          <div class="frame">
+            <div class="cap"><span>Plugins <i>/</i> Your plugins</span><button type="button" class="zoom">Enlarge</button></div>
+            <div class="stage">
+              <img src="/guide/assets/02-your-plugins.webp" width="1072" height="400" loading="lazy" alt="Your plugins list with JOYTREE shown under Active as a custom connector">
+              <i class="pin" style="left:2.4%;top:60%">1</i>
+              <i class="pin" style="left:97.6%;top:62%">2</i>
+            </div>
+          </div>
+          <ol class="legend">
+            <li><span><b>Click the row</b> to open JoyTree&rsquo;s detail page.</span></li>
+            <li><span><b>More actions</b> (&hellip;) &mdash; manage or remove the connector. Covered in <a href="#s5">Step 5</a>.</span></li>
+          </ol>
+        </figure>
+
+        <figure>
+          <div class="frame">
+            <div class="cap"><span>JoyTree <i>/</i> Overview</span><button type="button" class="zoom">Enlarge</button></div>
+            <div class="stage">
+              <img src="/guide/assets/03-overview.webp" width="1077" height="472" loading="lazy" alt="JOYTREE connector overview showing Connected status, authorization set to sign-in required, and source mcp.joytree.site/mcp">
+              <i class="pin" style="left:47.6%;top:56.1%">1</i>
+              <i class="pin" style="left:80.6%;top:79%">2</i>
+              <i class="pin" style="left:82%;top:92.8%">3</i>
+              <i class="pin" style="left:24.5%;top:34.5%">4</i>
+            </div>
+          </div>
+          <ol class="legend">
+            <li><span><b>Connected</b> &mdash; the one status that matters. You&rsquo;re live.</span></li>
+            <li><span><b>Authorization: Sign-in required</b> &mdash; this names the <em>method</em> (OAuth sign-in with your key). It does not mean you&rsquo;re signed out.</span></li>
+            <li><span><b>Source</b> &mdash; should read <code>mcp.joytree.site/mcp</code>. If it doesn&rsquo;t, remove the connector and re-add it.</span></li>
+            <li><span><b>Permissions tab</b> &mdash; where you control what Claude may do. Next step.</span></li>
+          </ol>
+        </figure>
+        <div class="note"><b>&ldquo;Can send data to mcp.joytree.site&rdquo;</b><p>Claude shows this on every connector. It&rsquo;s expected: it&rsquo;s how your requests reach JoyTree.</p></div>
+      </section>
+
+      <!-- STEP 4 -->
+      <section class="s" id="s4">
+        <div class="sh"><span class="n">STEP 04</span><h2>Set permissions</h2></div>
+        <p>This is the most valuable two minutes in the guide. Open the <strong>Permissions</strong> tab and choose, per tool or per group, when Claude is allowed to act. Tools are split into <strong>read-only</strong> tools (look, never touch) and tools that <strong>change things</strong> (deploy, delete, roll back, migrate).</p>
+        <figure>
+          <div class="frame">
+            <div class="cap"><span>JoyTree <i>/</i> Permissions</span><button type="button" class="zoom">Enlarge</button></div>
+            <div class="stage">
+              <img src="/guide/assets/04-permissions.webp" width="1075" height="633" loading="lazy" alt="Permissions tab listing read-only tools with a group-level Needs approval setting and per-tool approve, ask and block icons">
+              <i class="pin" style="left:3.2%;top:49.9%">1</i>
+              <i class="pin" style="left:76.8%;top:49.9%">2</i>
+              <i class="pin" style="left:84.4%;top:57.5%">3</i>
+            </div>
+          </div>
+          <ol class="legend">
+            <li><span><b>Tool group</b> &mdash; Read-only tools, each with a plain-English description of what it does.</span></li>
+            <li><span><b>Group setting</b> &mdash; applies one rule to every tool in the group at once.</span></li>
+            <li><span><b>Per-tool control</b> &mdash; tick (always allow), hand (needs approval) or no-entry (blocked), tool by tool.</span></li>
+          </ol>
+        </figure>
+
+        <h3>The four modes</h3>
+        <figure>
+          <div class="frame">
+            <div class="cap"><span>JoyTree <i>/</i> Permissions menu</span><button type="button" class="zoom">Enlarge</button></div>
+            <div class="stage">
+              <img src="/guide/assets/05-modes.webp" width="1078" height="635" loading="lazy" alt="The permission mode menu offering Blocked, Needs approval, Always allow and Custom">
+              <i class="pin" style="left:72.6%;top:46.3%">1</i>
+              <i class="pin" style="left:72.6%;top:50.7%">2</i>
+              <i class="pin" style="left:72.6%;top:55.1%">3</i>
+              <i class="pin" style="left:72.6%;top:59.5%">4</i>
+            </div>
+          </div>
+          <ol class="legend">
+            <li><span><b>Blocked</b></span></li>
+            <li><span><b>Needs approval</b></span></li>
+            <li><span><b>Always allow</b></span></li>
+            <li><span><b>Custom</b> &mdash; appears by itself when tools in a group have different settings.</span></li>
+          </ol>
+        </figure>
+
+        <div class="scroll"><table class="spec">
+          <thead><tr><th>Mode</th><th>What happens</th><th>Use it for</th></tr></thead>
+          <tbody>
+            <tr><td>Always allow<span class="tag">fast</span></td><td>Claude runs the tool without asking.</td><td>Read-only lookups: listing projects, logs, metrics.</td></tr>
+            <tr><td>Needs approval<span class="tag w">safe</span></td><td>Claude pauses and asks you each time.</td><td>Anything that changes state: deploys, env vars, rollbacks, migrations, firewall.</td></tr>
+            <tr><td>Blocked<span class="tag r">off</span></td><td>Claude cannot use the tool at all.</td><td>Tools you never want automated, such as <code>joytree_delete_project</code>.</td></tr>
+            <tr><td>Custom</td><td>A mix, shown on a group header.</td><td>Set automatically when you tune individual tools.</td></tr>
+          </tbody>
+        </table></div>
+
+        <div class="note"><b>Recommended setup</b><p>Set <strong>Read-only tools</strong> to Always allow so Claude can investigate freely. Keep everything that changes something on <strong>Needs approval</strong>. Block <code>joytree_delete_project</code> if you never want Claude deleting projects.</p></div>
+
+        <h3>Tools that change things</h3>
+        <p>Scroll further and you&rsquo;ll find the write tools, such as creating or deleting an alert rule, rolling back a deployment or starting a data migration. Expand <em>Takes N inputs</em> on any tool to see exactly what it will send, and <em>Raw schema</em> for the full definition.</p>
+        <figure>
+          <div class="frame">
+            <div class="cap"><span>JoyTree <i>/</i> Permissions &middot; write tools</span><button type="button" class="zoom">Enlarge</button></div>
+            <div class="stage">
+              <img src="/guide/assets/06-write-tools.webp" width="1077" height="630" loading="lazy" alt="Write tools such as alert rule management, rollback and data migration, with an expanded raw input schema">
+              <i class="pin" style="left:84.4%;top:7.5%">1</i>
+              <i class="pin" style="left:5.6%;top:20.2%">2</i>
+              <i class="pin" style="left:4.2%;top:71.6%">3</i>
+            </div>
+          </div>
+          <ol class="legend">
+            <li><span><b>Per-tool control</b> &mdash; set each tool independently.</span></li>
+            <li><span><b>Inputs &amp; schema</b> &mdash; see every parameter before you approve anything.</span></li>
+            <li><span><b>State-changing tool</b> &mdash; e.g. <em>Roll back to a previous deployment</em> redeploys an earlier commit. Keep these on approval.</span></li>
+          </ol>
+        </figure>
+        <div class="warn"><b>Heads up</b><p>Firewall tools need a JoyTree <strong>Pro</strong> plan or above. On lower plans they return an error even when allowed.</p></div>
+      </section>
+
+      <!-- STEP 5 -->
+      <section class="s" id="s5">
+        <div class="sh"><span class="n">STEP 05</span><h2>Manage the connector</h2></div>
+        <p>The <strong>&hellip;</strong> menu at the top right of the connector page holds three maintenance actions.</p>
+        <figure>
+          <div class="frame">
+            <div class="cap"><span>JoyTree <i>/</i> More actions</span><button type="button" class="zoom">Enlarge</button></div>
+            <div class="stage">
+              <img src="/guide/assets/07-menu.webp" width="1078" height="452" loading="lazy" alt="The more-actions menu offering Refresh tools list, Disconnect and Remove">
+              <i class="pin" style="left:77.4%;top:30.3%">1</i>
+              <i class="pin" style="left:77.4%;top:38.5%">2</i>
+              <i class="pin" style="left:77.4%;top:44.7%">3</i>
+            </div>
+          </div>
+          <ol class="legend">
+            <li><span><b>Refresh tools list</b> &mdash; pulls the latest tools from JoyTree. Use it after JoyTree ships new tools, or if one seems to be missing.</span></li>
+            <li><span><b>Disconnect</b> &mdash; signs Claude out of JoyTree but keeps the connector listed, so reconnecting is quick.</span></li>
+            <li><span><b>Remove</b> &mdash; deletes the connector entirely.</span></li>
+          </ol>
+        </figure>
+
+        <h3>Removing the connector</h3>
+        <figure>
+          <div class="frame">
+            <div class="cap"><span>JoyTree <i>/</i> Delete</span><button type="button" class="zoom">Enlarge</button></div>
+            <div class="stage">
+              <img src="/guide/assets/08-remove.webp" width="1078" height="627" loading="lazy" alt="Delete JOYTREE confirmation dialog with Cancel and Delete buttons">
+              <i class="pin" style="left:17.0%;top:46.3%">1</i>
+              <i class="pin" style="left:57.3%;top:56%">2</i>
+            </div>
+          </div>
+          <ol class="legend">
+            <li><span><b>Read the warning</b> &mdash; you&rsquo;ll need the server address to add it again, and any project files synced from JoyTree stop loading.</span></li>
+            <li><span><b>Delete</b> &mdash; confirms. Re-adding takes under a minute using the address from the top of this page.</span></li>
+          </ol>
+        </figure>
+      </section>
+
+      <section class="s" id="try">
+        <div class="sh"><span class="n">GO</span><h2>Try it</h2></div>
+        <p>Start a new chat and ask in plain language. Tap a prompt to copy it.</p>
+        <div class="chips">
+          <div class="chip"><div><q>List my JoyTree projects and tell me which ones look unhealthy.</q><small>joytree_list_projects &middot; joytree_observability_summary</small></div><button type="button" data-copy="List my JoyTree projects and tell me which ones look unhealthy.">Copy</button></div>
+          <div class="chip"><div><q>Deploy my GitHub repo and show me the build logs.</q><small>joytree_deploy_from_github &middot; joytree_runtime_logs</small></div><button type="button" data-copy="Deploy my GitHub repo and show me the build logs.">Copy</button></div>
+          <div class="chip"><div><q>Show CPU and memory for my app over the last hour.</q><small>joytree_observability_resources</small></div><button type="button" data-copy="Show CPU and memory for my app over the last hour.">Copy</button></div>
+          <div class="chip"><div><q>That release broke checkout. Roll back to the last good deployment.</q><small>joytree_rollback_deployment</small></div><button type="button" data-copy="That release broke checkout. Roll back to the last good deployment.">Copy</button></div>
+          <div class="chip"><div><q>Create a new Postgres database for my orders service.</q><small>joytree_create_database</small></div><button type="button" data-copy="Create a new Postgres database for my orders service.">Copy</button></div>
+        </div>
+        <p>If a tool is set to <strong>Needs approval</strong>, Claude will pause and ask before it runs. That&rsquo;s the system working as designed.</p>
+      </section>
+
+      <section class="s" id="help">
+        <div class="sh"><span class="n">FAQ</span><h2>Troubleshooting</h2></div>
+        <details>
+          <summary>JoyTree&rsquo;s tools aren&rsquo;t showing up in my chat</summary>
+          <div><p>Confirm the connector page says <strong>Connected</strong>, then open the <strong>&hellip;</strong> menu and choose <strong>Refresh tools list</strong>. Start a new chat afterwards so Claude loads the updated list.</p></div>
+        </details>
+        <details>
+          <summary>The sign-in page rejects my key</summary>
+          <div><p>Keys start with <code>jtk_</code> and are checked against JoyTree when you press Connect. Copy a fresh one from <a href="https://joytree.site/dashboard/account" target="_blank" rel="noopener">your account page</a> or run <code>joytree apikey show</code>. A key that has been regenerated or revoked will not work.</p></div>
+        </details>
+        <details>
+          <summary>It worked yesterday, now Claude asks me to sign in again</summary>
+          <div><p>Sign-in sessions are held in the server&rsquo;s memory, so a restart or update on JoyTree&rsquo;s side signs everyone out. Reconnect from Plugins and paste your key again. It takes about ten seconds and nothing is lost.</p></div>
+        </details>
+        <details>
+          <summary>Claude asks for approval on every single lookup</summary>
+          <div><p>Open <strong>Permissions</strong> and set <strong>Read-only tools</strong> to <strong>Always allow</strong>. Leave the state-changing tools on Needs approval.</p></div>
+        </details>
+        <details>
+          <summary>Firewall tools return an error</summary>
+          <div><p>The firewall is a <strong>Pro plan and above</strong> feature on JoyTree. Upgrade the plan, or leave those tools blocked.</p></div>
+        </details>
+        <details>
+          <summary>How do I fully cut off access?</summary>
+          <div><p>Use <strong>Disconnect</strong> (or <strong>Remove</strong>) in Claude. To also invalidate the credential itself, rotate your API key in the JoyTree dashboard.</p></div>
+        </details>
+      </section>
+
+      <section class="s" id="security">
+        <div class="sh"><span class="n">TRUST</span><h2>Security, in plain terms</h2></div>
+        <ul class="plain">
+          <li><strong>Your key is exchanged, not shared.</strong> It&rsquo;s verified once and replaced by an opaque OAuth token.</li>
+          <li><strong>Everything runs as you.</strong> Each request is scoped to your own key. There&rsquo;s no shared or server-wide credential anywhere.</li>
+          <li><strong>No cross-talk.</strong> Every request gets its own isolated server instance, so one caller&rsquo;s context can never leak into another&rsquo;s.</li>
+          <li><strong>You hold the brakes.</strong> Permissions in Step 4 decide what Claude can do without asking.</li>
+        </ul>
+        <p>Read the full <a href="/privacy">privacy policy</a>.</p>
+      </section>
+
+      <div class="cta">
+        <h2>Ready to ship from your chat?</h2>
+        <p>Add the connector in Claude, paste your key, and ask for your first deploy.</p>
+        <div class="field"><code>https://mcp.joytree.site/mcp</code><button type="button" data-copy="https://mcp.joytree.site/mcp">Copy</button></div>
+        <a class="btn" href="https://claude.ai/plugins" target="_blank" rel="noopener">Open Claude Plugins</a>
+        <a class="btn ghost" href="https://joytree.site/dashboard/account" target="_blank" rel="noopener">Get my API key</a>
+      </div>
+    </main>
+  </div>
+
+  <footer class="foot"><span>&copy; JoyTree</span><span><a href="/privacy">Privacy</a> &nbsp;&middot;&nbsp; <a href="https://joytree.site" target="_blank" rel="noopener">joytree.site</a></span></footer>
+</div>
+
+<dialog id="lb" aria-label="Enlarged screenshot"></dialog>
+
+<script>
+(function(){
+  // copy buttons
+  document.addEventListener('click',function(e){
+    var b=e.target.closest('[data-copy]'); if(!b) return;
+    var t=b.getAttribute('data-copy'), old=b.textContent;
+    function ok(){ b.textContent='Copied'; b.classList.add('done'); setTimeout(function(){b.textContent=old;b.classList.remove('done');},1400); }
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(ok,function(){}); }
+    else { var a=document.createElement('textarea'); a.value=t; document.body.appendChild(a); a.select(); try{document.execCommand('copy');ok();}catch(_){} a.remove(); }
+  });
+
+  // lightbox: clone the frame (pins use %, so they stay aligned)
+  var lb=document.getElementById('lb');
+  function open(frame){
+    lb.innerHTML=''; var c=frame.cloneNode(true);
+    var z=c.querySelector('.zoom'); if(z){ z.textContent='Close'; z.style.cursor='pointer'; }
+    lb.appendChild(c);
+    if(lb.showModal) lb.showModal(); else lb.setAttribute('open','');
+  }
+  document.querySelectorAll('figure .frame').forEach(function(f){
+    f.addEventListener('click',function(e){ if(e.target.closest('.stage')||e.target.closest('.zoom')) open(f); });
+  });
+  lb.addEventListener('click',function(){ if(lb.close) lb.close(); else lb.removeAttribute('open'); });
+
+  // scroll progress + scroll-spy
+  var bar=document.getElementById('bar');
+  function prog(){ var h=document.documentElement; var m=h.scrollHeight-h.clientHeight; bar.style.width=(m>0?(h.scrollTop/m*100):0)+'%'; }
+  addEventListener('scroll',prog,{passive:true}); prog();
+  var links={}; document.querySelectorAll('aside a').forEach(function(a){ links[a.getAttribute('href').slice(1)]=a; });
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(en){ if(en.isIntersecting){
+        Object.keys(links).forEach(function(k){ links[k].classList.remove('on'); });
+        var l=links[en.target.id]; if(l) l.classList.add('on');
+      }});
+    },{rootMargin:'-20% 0px -70% 0px'});
+    document.querySelectorAll('section.s').forEach(function(s){ io.observe(s); });
+  }
+})();
+</script>
+</body>
+</html>
