@@ -11,7 +11,11 @@ const { JoyTreeClient } = require('./joytree-client');
 const { PRIVACY_POLICY_HTML } = require('./privacy-policy');
 
 // Setup guide (static HTML + screenshots), read once at startup.
-const GUIDE_HTML = fs.readFileSync(path.join(__dirname, 'guide.html'), 'utf8');
+const { AGENT_DOCK_CSS, AGENT_DOCK_HTML, AGENT_DOCK_JS } = require('./agent-dock');
+const GUIDE_HTML = fs.readFileSync(path.join(__dirname, 'guide.html'), 'utf8')
+  .replace('<!--AGENT_DOCK_CSS-->', () => AGENT_DOCK_CSS)
+  .replace('<!--AGENT_DOCK-->', () => AGENT_DOCK_HTML)
+  .replace('<!--AGENT_DOCK_JS-->', () => AGENT_DOCK_JS);
 const { registerJoyTreeTools } = require('./tools');
 const { JoyTreeOAuthProvider } = require('./oauth-provider');
 
