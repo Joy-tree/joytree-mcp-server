@@ -119,6 +119,22 @@ app.get('/health', (_req, res) => res.status(200).json({
   uptimeSeconds: Math.round(process.uptime()),
 }));
 
+// Site icons: the same JoyTree logo as joytree.site, so tabs, bookmarks and home-screen shortcuts look right.
+const ICON_DIR = path.join(__dirname, 'assets', 'icons');
+const ICON_FILES = {
+  '/favicon.ico': ['favicon.ico', 'image/x-icon'],
+  '/favicon-32.png': ['favicon-32.png', 'image/png'],
+  '/icon-192.png': ['icon-192.png', 'image/png'],
+  '/icon-512.png': ['icon-512.png', 'image/png'],
+  '/apple-touch-icon.png': ['apple-touch-icon.png', 'image/png'],
+  '/apple-touch-icon-precomposed.png': ['apple-touch-icon.png', 'image/png'],
+};
+app.get(Object.keys(ICON_FILES), (req, res) => {
+  const [file, type] = ICON_FILES[req.path];
+  res.status(200).set({ 'Content-Type': type, 'Cache-Control': 'public, max-age=86400' })
+    .send(fs.readFileSync(path.join(ICON_DIR, file)));
+});
+
 // Setup guide: how to add JoyTree to Claude, with annotated screenshots.
 app.get(['/guide', '/guide/'], (_req, res) => {
   res.status(200).set({
